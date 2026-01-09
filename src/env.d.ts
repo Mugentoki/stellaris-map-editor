@@ -1,3 +1,5 @@
+declare const __APP_VERSION__: string;
+
 declare namespace NodeJS {
   interface ProcessEnv {
     NODE_ENV: string;

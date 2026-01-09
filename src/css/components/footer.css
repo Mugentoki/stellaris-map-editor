@@ -1,0 +1,5 @@
+.sme-footer {
+    justify-content: space-between;
+    min-height: unset;
+    max-height: 20px;
+}
