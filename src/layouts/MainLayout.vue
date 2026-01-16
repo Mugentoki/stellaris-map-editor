@@ -78,7 +78,7 @@
             :label="t('drawer.name')"
             outlined
             dense
-            readonly
+            @update:model-value="(val: string | number | null) => handleUpdateSystem('name', String(val ?? ''))"
           />
           
           <div class="text-subtitle2">{{ t('drawer.position') }}</div>
@@ -88,34 +88,42 @@
               label="X"
               outlined
               dense
-              readonly
+              type="number"
+              :min="MAP_LIMITS.XY_MIN"
+              :max="MAP_LIMITS.XY_MAX"
               class="col"
+              @update:model-value="(val: string | number | null) => handleUpdateSystem('x', Number(val))"
             />
             <q-input
               :model-value="(selectedElement.data as SystemData).y"
               label="Y"
               outlined
               dense
-              readonly
+              type="number"
+              :min="MAP_LIMITS.XY_MIN"
+              :max="MAP_LIMITS.XY_MAX"
               class="col"
+              @update:model-value="(val: string | number | null) => handleUpdateSystem('y', Number(val))"
             />
             <q-input
               :model-value="(selectedElement.data as SystemData).z"
               label="Z"
               outlined
               dense
-              readonly
+              type="number"
+              :min="MAP_LIMITS.Z_MIN"
+              :max="MAP_LIMITS.Z_MAX"
               class="col"
+              @update:model-value="(val: string | number | null) => handleUpdateSystem('z', Number(val))"
             />
           </div>
 
           <q-input
-            v-if="(selectedElement.data as SystemData).initializer"
-            :model-value="(selectedElement.data as SystemData).initializer"
+            :model-value="(selectedElement.data as SystemData).initializer || ''"
             :label="t('drawer.initializer')"
             outlined
             dense
-            readonly
+            @update:model-value="(val: string | number | null) => handleUpdateSystem('initializer', String(val ?? ''))"
           />
 
           <q-btn
@@ -146,12 +154,11 @@
             readonly
           />
           
-          <q-input
-            :model-value="(selectedElement.data as HyperlaneData).type"
-            :label="t('drawer.type')"
-            outlined
-            dense
-            readonly
+          <q-toggle
+            :model-value="(selectedElement.data as HyperlaneData).type === 'prevent'"
+            :label="t('drawer.preventHyperlane')"
+            color="negative"
+            @update:model-value="handleToggleHyperlaneType"
           />
 
           <q-btn
@@ -190,6 +197,7 @@ import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
 import { useMapStore, type SystemData, type HyperlaneData } from 'src/stores/map-store'
+import { MAP_LIMITS } from 'src/constants/map-limits'
 import OpenMapDialog from 'src/components/OpenMapDialog.vue'
 import MapSettingsDialog from 'src/components/MapSettingsDialog.vue'
 import SaveMapDialog from 'src/components/SaveMapDialog.vue'
@@ -242,5 +250,19 @@ function handleDeleteSelected() {
       message: t('messages.elementDeleted')
     })
   }
+}
+
+function handleUpdateSystem(field: 'name' | 'x' | 'y' | 'z' | 'initializer', value: string | number) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system') return
+  
+  const system = selectedElement.value.data as SystemData
+  mapStore.updateSystem(system.id, { [field]: value })
+}
+
+function handleToggleHyperlaneType() {
+  if (!selectedElement.value || selectedElement.value.type !== 'hyperlane') return
+  
+  const hyperlane = selectedElement.value.data as HyperlaneData
+  mapStore.toggleHyperlaneType(hyperlane.from, hyperlane.to)
 }
 </script>

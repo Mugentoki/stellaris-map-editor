@@ -1,6 +1,6 @@
 <template>
   <q-dialog v-model="dialogOpen" persistent>
-    <q-card style="min-width: 500px">
+    <q-card style="min-width: 500px; max-width: 80vw; max-height: 80vh;" class="column">
       <q-card-section>
         <div class="text-h6">{{ t('openDialog.title') }}</div>
       </q-card-section>
@@ -48,8 +48,7 @@
           type="textarea"
           :placeholder="t('openDialog.placeholder')"
           outlined
-          autogrow
-          :input-style="{ minHeight: '200px' }"
+          :input-style="{ height: '300px', resize: 'none' }"
         />
       </q-card-section>
 

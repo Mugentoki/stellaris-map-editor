@@ -376,6 +376,135 @@ export const useMapStore = defineStore('map', () => {
     return document.value !== null;
   }
 
+  function updateSystem(systemId: string, updates: Partial<Omit<SystemData, 'id'>>): void {
+    const scenario = getScenarioBlock();
+    if (!scenario) return;
+
+    for (const prop of scenario.properties) {
+      if (prop.key === 'system') {
+        const systemBlock = getBlockValue(prop);
+        if (!systemBlock) continue;
+
+        const idProp = findPropertyInBlock(systemBlock, 'id');
+        if (!idProp || getValueAsString(idProp.value) !== systemId) continue;
+
+        // Update name
+        if (updates.name !== undefined) {
+          const nameProp = findPropertyInBlock(systemBlock, 'name');
+          if (nameProp) {
+            nameProp.value = updates.name;
+          }
+        }
+
+        // Update initializer
+        if (updates.initializer !== undefined) {
+          const initProp = findPropertyInBlock(systemBlock, 'initializer');
+          if (initProp) {
+            initProp.value = updates.initializer;
+          } else if (updates.initializer) {
+            // Add initializer if it doesn't exist
+            systemBlock.properties.push({ 
+              type: 'Property', 
+              key: 'initializer', 
+              operator: '=',
+              value: updates.initializer 
+            } as Property);
+          }
+        }
+
+        // Update position
+        if (updates.x !== undefined || updates.y !== undefined || updates.z !== undefined) {
+          const posProp = findPropertyInBlock(systemBlock, 'position');
+          if (posProp) {
+            const posBlock = getBlockValue(posProp);
+            if (posBlock) {
+              if (updates.x !== undefined) {
+                const xProp = findPropertyInBlock(posBlock, 'x');
+                if (xProp) xProp.value = updates.x;
+              }
+              if (updates.y !== undefined) {
+                const yProp = findPropertyInBlock(posBlock, 'y');
+                if (yProp) yProp.value = updates.y;
+              }
+              if (updates.z !== undefined) {
+                const zProp = findPropertyInBlock(posBlock, 'z');
+                if (zProp) {
+                  zProp.value = updates.z;
+                } else {
+                  // Create z property if it doesn't exist
+                  posBlock.properties.push({
+                    type: 'Property',
+                    key: 'z',
+                    operator: '=',
+                    value: updates.z
+                  } as Property);
+                }
+              }
+            }
+          }
+        }
+
+        // Update selection if this system is selected
+        if (selectedElement.value?.type === 'system') {
+          const selectedSystem = selectedElement.value.data as SystemData;
+          if (selectedSystem.id === systemId) {
+            selectedElement.value = {
+              type: 'system',
+              data: {
+                ...selectedSystem,
+                ...updates
+              }
+            };
+          }
+        }
+
+        version.value++;
+        return;
+      }
+    }
+  }
+
+  function toggleHyperlaneType(from: string, to: string): void {
+    const scenario = getScenarioBlock();
+    if (!scenario) return;
+
+    for (const prop of scenario.properties) {
+      if (prop.key === 'add_hyperlane' || prop.key === 'prevent_hyperlane') {
+        const hlBlock = getBlockValue(prop);
+        if (!hlBlock) continue;
+
+        const fromProp = findPropertyInBlock(hlBlock, 'from');
+        const toProp = findPropertyInBlock(hlBlock, 'to');
+        const foundFrom = fromProp ? getValueAsString(fromProp.value) : '';
+        const foundTo = toProp ? getValueAsString(toProp.value) : '';
+
+        if (foundFrom === from && foundTo === to) {
+          // Toggle the type
+          const newType = prop.key === 'add_hyperlane' ? 'prevent_hyperlane' : 'add_hyperlane';
+          prop.key = newType;
+
+          // Update selection if this hyperlane is selected
+          if (selectedElement.value?.type === 'hyperlane') {
+            const selectedHyperlane = selectedElement.value.data as HyperlaneData;
+            if (selectedHyperlane.from === from && selectedHyperlane.to === to) {
+              selectedElement.value = {
+                type: 'hyperlane',
+                data: {
+                  from,
+                  to,
+                  type: newType === 'add_hyperlane' ? 'add' : 'prevent'
+                }
+              };
+            }
+          }
+
+          version.value++;
+          return;
+        }
+      }
+    }
+  }
+
   // Selection state
   const selectedElement = ref<SelectedElement | null>(null);
 
@@ -404,6 +533,8 @@ export const useMapStore = defineStore('map', () => {
     updateNestedSetting,
     deleteSystem,
     deleteHyperlane,
+    updateSystem,
+    toggleHyperlaneType,
     stringifyDocument,
     hasDocument,
     // Selection

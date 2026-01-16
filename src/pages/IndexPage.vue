@@ -14,7 +14,11 @@ const galaxySceneRef = ref<InstanceType<typeof GalaxyScene> | null>(null);
 <style scoped>
 .galaxy-page {
   position: relative;
+  width: 100%;
   height: 100%;
-  padding: 0;
+  min-height: inherit;
+  padding: 0 !important;
+  margin: 0;
+  overflow: hidden;
 }
 </style>

@@ -65,6 +65,7 @@ export default {
     from: "From",
     to: "To",
     type: "Type",
+    preventHyperlane: "Prevent Hyperlane",
     delete: "Delete",
     noSelection: "Select a star or hyperlane to view details",
     confirmDelete: "Are you sure you want to delete this element?"
