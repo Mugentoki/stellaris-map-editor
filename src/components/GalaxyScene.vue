@@ -658,7 +658,9 @@ function createGlowLine(key: string, points: THREE.Vector3[], color: number) {
 }
 
 function createNebula(nebula: NebulaData) {
-  const position = new THREE.Vector3(nebula.x, nebula.y, nebula.z - 0.5); // Slightly behind stars
+  // Clamp z position to map limits
+  const clampedZ = Math.max(-5, Math.min(5, nebula.z));
+  const position = new THREE.Vector3(nebula.x, nebula.y, clampedZ - 0.5); // Slightly behind stars
   
   // Create cloud sprite with procedural texture
   const seed = hashString(nebula.name);
@@ -671,7 +673,9 @@ function createNebula(nebula: NebulaData) {
   });
   const cloud = new THREE.Sprite(cloudMaterial);
   cloud.position.copy(position);
-  cloud.scale.set(nebula.radius * 2.5, nebula.radius * 2.5, 1); // Scale to cover radius area
+  // Scale to fill the radius circle (X and Y match radius, Z position already clamped)
+  const scale = nebula.radius * 3.2;
+  cloud.scale.set(scale, scale, 1);
   cloud.renderOrder = -1; // Render behind other objects
   scene.add(cloud);
   
@@ -683,7 +687,7 @@ function createNebula(nebula: NebulaData) {
     circlePoints.push(new THREE.Vector3(
       nebula.x + Math.cos(angle) * nebula.radius,
       nebula.y + Math.sin(angle) * nebula.radius,
-      nebula.z - 0.3
+      clampedZ - 0.3
     ));
   }
   
