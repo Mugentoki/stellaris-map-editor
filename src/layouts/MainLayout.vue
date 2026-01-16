@@ -168,6 +168,74 @@
             @click="handleDeleteSelected"
           />
         </div>
+
+        <!-- Nebula details -->
+        <div v-else-if="selectedElement.type === 'nebula'" class="column q-gutter-md">
+          <div class="text-h6">{{ t('drawer.nebulaDetails') }}</div>
+          
+          <q-input
+            :model-value="(selectedElement.data as NebulaData).name"
+            :label="t('drawer.name')"
+            outlined
+            dense
+            @update:model-value="(val: string | number | null) => handleUpdateNebula('name', String(val ?? ''))"
+          />
+          
+          <div class="text-subtitle2">{{ t('drawer.position') }}</div>
+          <div class="row q-gutter-sm">
+            <q-input
+              :model-value="(selectedElement.data as NebulaData).x"
+              label="X"
+              outlined
+              dense
+              type="number"
+              :min="MAP_LIMITS.XY_MIN"
+              :max="MAP_LIMITS.XY_MAX"
+              class="col"
+              @update:model-value="(val: string | number | null) => handleUpdateNebula('x', Number(val))"
+            />
+            <q-input
+              :model-value="(selectedElement.data as NebulaData).y"
+              label="Y"
+              outlined
+              dense
+              type="number"
+              :min="MAP_LIMITS.XY_MIN"
+              :max="MAP_LIMITS.XY_MAX"
+              class="col"
+              @update:model-value="(val: string | number | null) => handleUpdateNebula('y', Number(val))"
+            />
+            <q-input
+              :model-value="(selectedElement.data as NebulaData).z"
+              label="Z"
+              outlined
+              dense
+              type="number"
+              :min="MAP_LIMITS.Z_MIN"
+              :max="MAP_LIMITS.Z_MAX"
+              class="col"
+              @update:model-value="(val: string | number | null) => handleUpdateNebula('z', Number(val))"
+            />
+          </div>
+
+          <q-input
+            :model-value="(selectedElement.data as NebulaData).radius"
+            :label="t('drawer.radius')"
+            outlined
+            dense
+            type="number"
+            :min="1"
+            :max="500"
+            @update:model-value="(val: string | number | null) => handleUpdateNebula('radius', Number(val))"
+          />
+
+          <q-btn
+            color="negative"
+            :label="t('drawer.delete')"
+            icon="delete"
+            @click="handleDeleteSelected"
+          />
+        </div>
       </div>
     </q-drawer>
 
@@ -196,7 +264,7 @@
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useQuasar } from 'quasar'
-import { useMapStore, type SystemData, type HyperlaneData } from 'src/stores/map-store'
+import { useMapStore, type SystemData, type HyperlaneData, type NebulaData } from 'src/stores/map-store'
 import { MAP_LIMITS } from 'src/constants/map-limits'
 import OpenMapDialog from 'src/components/OpenMapDialog.vue'
 import MapSettingsDialog from 'src/components/MapSettingsDialog.vue'
@@ -243,6 +311,9 @@ function handleDeleteSelected() {
     } else if (selectedElement.value.type === 'hyperlane') {
       const hyperlane = selectedElement.value.data as HyperlaneData
       mapStore.deleteHyperlane(hyperlane.from, hyperlane.to)
+    } else if (selectedElement.value.type === 'nebula') {
+      const nebula = selectedElement.value.data as NebulaData
+      mapStore.deleteNebula(nebula.name)
     }
     mapStore.clearSelection()
     $q.notify({
@@ -257,6 +328,13 @@ function handleUpdateSystem(field: 'name' | 'x' | 'y' | 'z' | 'initializer', val
   
   const system = selectedElement.value.data as SystemData
   mapStore.updateSystem(system.id, { [field]: value })
+}
+
+function handleUpdateNebula(field: 'name' | 'x' | 'y' | 'z' | 'radius', value: string | number) {
+  if (!selectedElement.value || selectedElement.value.type !== 'nebula') return
+  
+  const nebula = selectedElement.value.data as NebulaData
+  mapStore.updateNebula(nebula.name, { [field]: value })
 }
 
 function handleToggleHyperlaneType() {

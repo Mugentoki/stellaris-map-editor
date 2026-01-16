@@ -17,9 +17,17 @@ export interface HyperlaneData {
   type: 'add' | 'prevent';
 }
 
+export interface NebulaData {
+  name: string;
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+}
+
 export interface SelectedElement {
-  type: 'system' | 'hyperlane';
-  data: SystemData | HyperlaneData;
+  type: 'system' | 'hyperlane' | 'nebula';
+  data: SystemData | HyperlaneData | NebulaData;
 }
 
 export interface MapSettings {
@@ -232,6 +240,54 @@ export const useMapStore = defineStore('map', () => {
     return hyperlaneList;
   });
 
+  const nebulae = computed<NebulaData[]>(() => {
+    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+    version.value; // Trigger reactivity on version change
+    
+    const scenario = getScenarioBlock();
+    if (!scenario) return [];
+
+    const nebulaList: NebulaData[] = [];
+
+    for (const prop of scenario.properties) {
+      if (prop.key === 'nebula') {
+        const nebulaBlock = getBlockValue(prop);
+        if (!nebulaBlock) continue;
+
+        let name = '';
+        let x = 0;
+        let y = 0;
+        let z = 0;
+        let radius = 10;
+
+        for (const nebProp of nebulaBlock.properties) {
+          if (nebProp.key === 'name') {
+            name = getValueAsString(nebProp.value);
+          } else if (nebProp.key === 'radius') {
+            radius = getValueAsNumber(nebProp.value, 10);
+          } else if (nebProp.key === 'position') {
+            const posBlock = getBlockValue(nebProp);
+            if (posBlock) {
+              for (const posProp of posBlock.properties) {
+                if (posProp.key === 'x') {
+                  x = getValueAsNumber(posProp.value);
+                } else if (posProp.key === 'y') {
+                  y = getValueAsNumber(posProp.value);
+                } else if (posProp.key === 'z') {
+                  z = getValueAsNumber(posProp.value);
+                }
+              }
+            }
+          }
+        }
+
+        nebulaList.push({ name, x, y, z, radius });
+      }
+    }
+
+    return nebulaList;
+  });
+
   const mapName = computed<string>(() => {
     // eslint-disable-next-line @typescript-eslint/no-unused-expressions
     version.value;
@@ -364,6 +420,108 @@ export const useMapStore = defineStore('map', () => {
     if (indexToRemove !== -1) {
       scenario.properties.splice(indexToRemove, 1);
       version.value++;
+    }
+  }
+
+  function deleteNebula(nebulaName: string): void {
+    const scenario = getScenarioBlock();
+    if (!scenario) return;
+
+    const indexToRemove = scenario.properties.findIndex((prop: Property) => {
+      if (prop.key === 'nebula') {
+        const nebulaBlock = getBlockValue(prop);
+        if (nebulaBlock) {
+          const nameProp = findPropertyInBlock(nebulaBlock, 'name');
+          if (nameProp && getValueAsString(nameProp.value) === nebulaName) {
+            return true;
+          }
+        }
+      }
+      return false;
+    });
+
+    if (indexToRemove !== -1) {
+      scenario.properties.splice(indexToRemove, 1);
+      version.value++;
+    }
+  }
+
+  function updateNebula(nebulaName: string, updates: Partial<NebulaData>): void {
+    const scenario = getScenarioBlock();
+    if (!scenario) return;
+
+    for (const prop of scenario.properties) {
+      if (prop.key === 'nebula') {
+        const nebulaBlock = getBlockValue(prop);
+        if (!nebulaBlock) continue;
+
+        const nameProp = findPropertyInBlock(nebulaBlock, 'name');
+        if (!nameProp || getValueAsString(nameProp.value) !== nebulaName) continue;
+
+        // Update name
+        if (updates.name !== undefined && nameProp) {
+          nameProp.value = updates.name;
+        }
+
+        // Update radius
+        if (updates.radius !== undefined) {
+          const radiusProp = findPropertyInBlock(nebulaBlock, 'radius');
+          if (radiusProp) {
+            radiusProp.value = updates.radius;
+          }
+        }
+
+        // Update position
+        if (updates.x !== undefined || updates.y !== undefined || updates.z !== undefined) {
+          const posProp = findPropertyInBlock(nebulaBlock, 'position');
+          if (posProp) {
+            const posBlock = getBlockValue(posProp);
+            if (posBlock) {
+              if (updates.x !== undefined) {
+                const xProp = findPropertyInBlock(posBlock, 'x');
+                if (xProp) xProp.value = updates.x;
+              }
+              if (updates.y !== undefined) {
+                const yProp = findPropertyInBlock(posBlock, 'y');
+                if (yProp) yProp.value = updates.y;
+              }
+              if (updates.z !== undefined) {
+                const zProp = findPropertyInBlock(posBlock, 'z');
+                if (zProp) {
+                  zProp.value = updates.z;
+                } else {
+                  // Create z property if it doesn't exist
+                  posBlock.properties.push({
+                    type: 'Property',
+                    key: 'z',
+                    operator: '=',
+                    value: updates.z
+                  } as Property);
+                }
+              }
+            }
+          }
+        }
+
+        // Update selection if this nebula is selected
+        if (selectedElement.value?.type === 'nebula') {
+          const selectedNebula = selectedElement.value.data as NebulaData;
+          if (selectedNebula.name === nebulaName) {
+            const newName = updates.name ?? nebulaName;
+            selectedElement.value = {
+              type: 'nebula',
+              data: {
+                ...selectedNebula,
+                ...updates,
+                name: newName
+              }
+            };
+          }
+        }
+
+        version.value++;
+        return;
+      }
     }
   }
 
@@ -524,6 +682,7 @@ export const useMapStore = defineStore('map', () => {
     // Getters
     systems,
     hyperlanes,
+    nebulae,
     mapName,
     mapSettings,
     // Actions
@@ -533,7 +692,9 @@ export const useMapStore = defineStore('map', () => {
     updateNestedSetting,
     deleteSystem,
     deleteHyperlane,
+    deleteNebula,
     updateSystem,
+    updateNebula,
     toggleHyperlaneType,
     stringifyDocument,
     hasDocument,

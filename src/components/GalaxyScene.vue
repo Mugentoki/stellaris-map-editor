@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
-import { useMapStore, type SystemData, type HyperlaneData } from 'src/stores/map-store';
+import { useMapStore, type SystemData, type HyperlaneData, type NebulaData } from 'src/stores/map-store';
 
 const mapStore = useMapStore();
 const containerRef = ref<HTMLDivElement | null>(null);
@@ -30,6 +30,14 @@ const hyperlaneMeshes: Map<string, THREE.Line> = new Map();
 const hyperlaneGlowMeshes: Map<string, Line2 | THREE.Line> = new Map();
 let useLine2 = true; // Will be set to false if Line2 fails
 
+// Nebula meshes
+interface NebulaMeshData {
+  cloud: THREE.Sprite;
+  circle: THREE.Line;
+  glowCircle: Line2 | THREE.Line;
+}
+const nebulaMeshes: Map<string, NebulaMeshData> = new Map();
+
 // Raycasting
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -45,6 +53,10 @@ let currentGlowLine: Line2 | THREE.Line | null = null;
 // Selection state (separate from hover)
 let selectionRing: THREE.Mesh | null = null;
 let selectedGlowLine: Line2 | THREE.Line | null = null;
+let selectedNebulaGlowCircle: Line2 | THREE.Line | null = null;
+
+// Nebula hover state
+let hoveredNebulaGlowCircle: Line2 | THREE.Line | null = null;
 
 // === CAMERA CONTROL STATE ===
 // Camera pivot point (what we rotate around and look at)
@@ -83,6 +95,13 @@ const starSelectedMaterial = new THREE.MeshBasicMaterial({ color: 0xffaa44 });
 const hyperlaneMaterial = new THREE.LineBasicMaterial({ color: 0x4488ff, linewidth: 2 });
 const hyperlaneSelectedMaterial = new THREE.LineBasicMaterial({ color: 0xff4488, linewidth: 3 });
 const preventHyperlaneMaterial = new THREE.LineBasicMaterial({ color: 0xff4444, linewidth: 2, opacity: 0.5, transparent: true });
+
+// Nebula materials
+const nebulaCircleMaterial = new THREE.LineBasicMaterial({ 
+  color: 0x8855aa, 
+  transparent: true, 
+  opacity: 0.5 
+});
 
 // Geometry (shared)
 const starGeometry = new THREE.SphereGeometry(0.8, 12, 12);
@@ -128,6 +147,139 @@ function createGlowTexture(): THREE.Texture {
 }
 
 let starGlowTexture: THREE.Texture;
+
+// Simple seeded random for consistent nebula noise
+function seededRandom(seed: number): number {
+  const x = Math.sin(seed * 12.9898 + seed * 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// Simple 2D noise function for nebula texture
+function noise2D(x: number, y: number, seed: number): number {
+  const i = Math.floor(x);
+  const j = Math.floor(y);
+  const fx = x - i;
+  const fy = y - j;
+  
+  // Get values at grid corners
+  const n00 = seededRandom(i + j * 57 + seed);
+  const n10 = seededRandom((i + 1) + j * 57 + seed);
+  const n01 = seededRandom(i + (j + 1) * 57 + seed);
+  const n11 = seededRandom((i + 1) + (j + 1) * 57 + seed);
+  
+  // Smooth interpolation
+  const sx = fx * fx * (3 - 2 * fx);
+  const sy = fy * fy * (3 - 2 * fy);
+  
+  const nx0 = n00 * (1 - sx) + n10 * sx;
+  const nx1 = n01 * (1 - sx) + n11 * sx;
+  
+  return nx0 * (1 - sy) + nx1 * sy;
+}
+
+// Fractal Brownian Motion for more natural noise
+function fbm(x: number, y: number, seed: number, octaves: number = 4): number {
+  let value = 0;
+  let amplitude = 0.5;
+  let frequency = 1;
+  
+  for (let i = 0; i < octaves; i++) {
+    value += amplitude * noise2D(x * frequency, y * frequency, seed + i * 100);
+    amplitude *= 0.5;
+    frequency *= 2;
+  }
+  
+  return value;
+}
+
+// Create procedural nebula texture with noise
+function createNebulaTexture(seed: number): THREE.Texture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  
+  // Clear with transparent
+  ctx.clearRect(0, 0, size, size);
+  
+  const centerX = size / 2;
+  const centerY = size / 2;
+  const maxRadius = size / 2;
+  
+  // Color palette for nebula (purple/magenta/blue)
+  const baseHue = 260 + seededRandom(seed * 7) * 60; // 260-320 (purple to magenta)
+  
+  // Create image data for pixel manipulation
+  const imageData = ctx.createImageData(size, size);
+  const data = imageData.data;
+  
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const normalizedDist = dist / maxRadius;
+      
+      // Get noise value for this pixel
+      const noiseScale = 3;
+      const noiseVal = fbm(x / size * noiseScale, y / size * noiseScale, seed, 4);
+      
+      // Vary the edge radius with noise for irregular shape
+      const angleNoise = fbm(Math.atan2(dy, dx) * 2 + seed, dist / maxRadius, seed + 50, 3);
+      const edgeRadius = 0.7 + angleNoise * 0.4;
+      
+      // Calculate alpha based on distance with noise variation
+      let alpha = 0;
+      if (normalizedDist < edgeRadius) {
+        // Soft falloff from center
+        const falloff = 1 - (normalizedDist / edgeRadius);
+        alpha = falloff * falloff * (0.3 + noiseVal * 0.4);
+        
+        // Add some wisps/tendrils
+        const wispNoise = fbm(x / size * 8, y / size * 8, seed + 200, 3);
+        if (wispNoise > 0.6) {
+          alpha += (wispNoise - 0.6) * 0.3;
+        }
+      }
+      
+      // Clamp alpha
+      alpha = Math.min(0.6, Math.max(0, alpha));
+      
+      // Color with slight variation
+      const hueShift = (noiseVal - 0.5) * 30;
+      const hue = baseHue + hueShift;
+      const saturation = 60 + noiseVal * 30;
+      const lightness = 40 + noiseVal * 30;
+      
+      // Convert HSL to RGB
+      const c = (1 - Math.abs(2 * lightness / 100 - 1)) * saturation / 100;
+      const hueNorm = hue / 60;
+      const xVal = c * (1 - Math.abs(hueNorm % 2 - 1));
+      const m = lightness / 100 - c / 2;
+      
+      let r = 0, g = 0, b = 0;
+      if (hueNorm >= 0 && hueNorm < 1) { r = c; g = xVal; b = 0; }
+      else if (hueNorm >= 1 && hueNorm < 2) { r = xVal; g = c; b = 0; }
+      else if (hueNorm >= 2 && hueNorm < 3) { r = 0; g = c; b = xVal; }
+      else if (hueNorm >= 3 && hueNorm < 4) { r = 0; g = xVal; b = c; }
+      else if (hueNorm >= 4 && hueNorm < 5) { r = xVal; g = 0; b = c; }
+      else { r = c; g = 0; b = xVal; }
+      
+      const idx = (y * size + x) * 4;
+      data[idx] = Math.floor((r + m) * 255);
+      data[idx + 1] = Math.floor((g + m) * 255);
+      data[idx + 2] = Math.floor((b + m) * 255);
+      data[idx + 3] = Math.floor(alpha * 255);
+    }
+  }
+  
+  ctx.putImageData(imageData, 0, 0);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
 
 // Create procedural skybox with stars and distant galaxies
 function createSkyboxTexture(faceIndex: number): THREE.Texture {
@@ -389,6 +541,12 @@ function renderMap() {
 
   const systems = mapStore.systems;
   const hyperlanes = mapStore.hyperlanes;
+  const nebulae = mapStore.nebulae;
+
+  // Create nebulae first (rendered behind everything)
+  for (const nebula of nebulae) {
+    createNebula(nebula);
+  }
 
   // Create systems (stars)
   for (const system of systems) {
@@ -499,6 +657,96 @@ function createGlowLine(key: string, points: THREE.Vector3[], color: number) {
   hyperlaneGlowMeshes.set(key, glowLine);
 }
 
+function createNebula(nebula: NebulaData) {
+  const position = new THREE.Vector3(nebula.x, nebula.y, nebula.z - 0.5); // Slightly behind stars
+  
+  // Create cloud sprite with procedural texture
+  const seed = hashString(nebula.name);
+  const nebulaTexture = createNebulaTexture(seed);
+  const cloudMaterial = new THREE.SpriteMaterial({
+    map: nebulaTexture,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: false
+  });
+  const cloud = new THREE.Sprite(cloudMaterial);
+  cloud.position.copy(position);
+  cloud.scale.set(nebula.radius * 2.5, nebula.radius * 2.5, 1); // Scale to cover radius area
+  cloud.renderOrder = -1; // Render behind other objects
+  scene.add(cloud);
+  
+  // Create radius circle using EllipseCurve
+  const circlePoints: THREE.Vector3[] = [];
+  const segments = 64;
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    circlePoints.push(new THREE.Vector3(
+      nebula.x + Math.cos(angle) * nebula.radius,
+      nebula.y + Math.sin(angle) * nebula.radius,
+      nebula.z - 0.3
+    ));
+  }
+  
+  const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
+  const circle = new THREE.Line(circleGeometry, nebulaCircleMaterial.clone());
+  circle.userData = { type: 'nebula', data: nebula };
+  scene.add(circle);
+  
+  // Create glow circle for hover/selection effect (hidden by default)
+  const glowCircle = createNebulaGlowCircle(nebula, circlePoints);
+  
+  nebulaMeshes.set(nebula.name, { cloud, circle, glowCircle });
+}
+
+function createNebulaGlowCircle(nebula: NebulaData, points: THREE.Vector3[]): Line2 | THREE.Line {
+  if (useLine2) {
+    try {
+      const positions: number[] = [];
+      for (const p of points) {
+        positions.push(p.x, p.y, p.z);
+      }
+      const lineGeometry = new LineGeometry();
+      lineGeometry.setPositions(positions);
+      const lineMaterial = new LineMaterial({
+        color: 0x00ffff, // Cyan for hover, will be changed on selection
+        linewidth: 3,
+        transparent: true,
+        opacity: 0.7,
+        resolution: new THREE.Vector2(window.innerWidth, window.innerHeight)
+      });
+      const glowCircle = new Line2(lineGeometry, lineMaterial);
+      glowCircle.visible = false;
+      scene.add(glowCircle);
+      return glowCircle;
+    } catch {
+      // Fall through to regular Line
+    }
+  }
+  
+  // Fallback
+  const geometry = new THREE.BufferGeometry().setFromPoints(points);
+  const material = new THREE.LineBasicMaterial({
+    color: 0x00ffff,
+    transparent: true,
+    opacity: 0.8
+  });
+  const glowCircle = new THREE.Line(geometry, material);
+  glowCircle.visible = false;
+  scene.add(glowCircle);
+  return glowCircle;
+}
+
+// Simple string hash function for consistent nebula seeds
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash);
+}
+
 function clearMapObjects() {
   // Clear hover state
   clearHover();
@@ -545,6 +793,35 @@ function clearMapObjects() {
     scene.remove(line);
   }
   hyperlaneGlowMeshes.clear();
+
+  // Dispose and remove all nebula meshes
+  for (const nebulaData of nebulaMeshes.values()) {
+    // Dispose cloud sprite
+    if (nebulaData.cloud.material instanceof THREE.SpriteMaterial) {
+      if (nebulaData.cloud.material.map) {
+        nebulaData.cloud.material.map.dispose();
+      }
+      nebulaData.cloud.material.dispose();
+    }
+    scene.remove(nebulaData.cloud);
+    
+    // Dispose circle
+    nebulaData.circle.geometry.dispose();
+    if (nebulaData.circle.material instanceof THREE.Material) {
+      nebulaData.circle.material.dispose();
+    }
+    scene.remove(nebulaData.circle);
+    
+    // Dispose glow circle
+    nebulaData.glowCircle.geometry.dispose();
+    if (nebulaData.glowCircle.material instanceof THREE.Material) {
+      nebulaData.glowCircle.material.dispose();
+    } else if (Array.isArray(nebulaData.glowCircle.material)) {
+      nebulaData.glowCircle.material.forEach(m => m.dispose());
+    }
+    scene.remove(nebulaData.glowCircle);
+  }
+  nebulaMeshes.clear();
 }
 
 function onCanvasClick(event: MouseEvent) {
@@ -581,6 +858,16 @@ function onCanvasClick(event: MouseEvent) {
     return;
   }
 
+  // Check nebula circles with scaled threshold
+  const nebulaCircleObjects = Array.from(nebulaMeshes.values()).map(n => n.circle);
+  raycaster.params.Line = { threshold: scaledThreshold };
+  const nebulaIntersects = raycaster.intersectObjects(nebulaCircleObjects);
+
+  if (nebulaIntersects.length > 0 && nebulaIntersects[0]) {
+    selectObject(nebulaIntersects[0].object as THREE.Line);
+    return;
+  }
+
   // Deselect and unfocus if clicking empty space
   deselectCurrent();
   focusPoint = null;
@@ -591,11 +878,11 @@ function selectObject(object: THREE.Mesh | THREE.Line) {
   deselectCurrent();
 
   selectedMesh = object;
-  const userData = object.userData as { type: string; data: SystemData | HyperlaneData };
+  const userData = object.userData as { type: string; data: SystemData | HyperlaneData | NebulaData };
   
   // Update store selection
   mapStore.selectElement({
-    type: userData.type as 'system' | 'hyperlane',
+    type: userData.type as 'system' | 'hyperlane' | 'nebula',
     data: userData.data
   });
 
@@ -624,6 +911,14 @@ function selectObject(object: THREE.Mesh | THREE.Line) {
       focusPoint = center;
       targetPivot = center.clone();
     }
+  } else if (userData.type === 'nebula' && object instanceof THREE.Line) {
+    // Show selection glow for nebula (orange)
+    showNebulaSelectionGlow(userData.data as NebulaData);
+    // Set focus point to nebula center
+    const nebulaData = userData.data as NebulaData;
+    const center = new THREE.Vector3(nebulaData.x, nebulaData.y, nebulaData.z);
+    focusPoint = center;
+    targetPivot = center.clone();
   }
 }
 
@@ -647,6 +942,20 @@ function showSelectionGlow(line: THREE.Line) {
   }
 }
 
+function showNebulaSelectionGlow(nebula: NebulaData) {
+  const meshData = nebulaMeshes.get(nebula.name);
+  if (meshData) {
+    // Change glow circle color to orange for selection
+    if (meshData.glowCircle.material instanceof LineMaterial) {
+      meshData.glowCircle.material.color.setHex(0xff8800);
+    } else if (meshData.glowCircle.material instanceof THREE.LineBasicMaterial) {
+      meshData.glowCircle.material.color.setHex(0xff8800);
+    }
+    meshData.glowCircle.visible = true;
+    selectedNebulaGlowCircle = meshData.glowCircle;
+  }
+}
+
 function clearSelectionVisuals() {
   // Remove selection ring from scene
   if (selectionRing && selectionRing.parent) {
@@ -658,6 +967,18 @@ function clearSelectionVisuals() {
     selectedGlowLine.visible = false;
     selectedGlowLine = null;
   }
+  
+  // Hide selected nebula glow circle and reset color
+  if (selectedNebulaGlowCircle) {
+    selectedNebulaGlowCircle.visible = false;
+    // Reset color to cyan for hover
+    if (selectedNebulaGlowCircle.material instanceof LineMaterial) {
+      selectedNebulaGlowCircle.material.color.setHex(0x00ffff);
+    } else if (selectedNebulaGlowCircle.material instanceof THREE.LineBasicMaterial) {
+      selectedNebulaGlowCircle.material.color.setHex(0x00ffff);
+    }
+    selectedNebulaGlowCircle = null;
+  }
 }
 
 function deselectCurrent() {
@@ -665,7 +986,7 @@ function deselectCurrent() {
   clearSelectionVisuals();
   
   if (selectedMesh) {
-    const userData = selectedMesh.userData as { type: string; data: SystemData | HyperlaneData };
+    const userData = selectedMesh.userData as { type: string; data: SystemData | HyperlaneData | NebulaData };
     
     // Restore original material
     if (userData.type === 'system' && selectedMesh instanceof THREE.Mesh) {
@@ -682,6 +1003,7 @@ function deselectCurrent() {
         ? hyperlaneMaterial.clone() 
         : preventHyperlaneMaterial.clone();
     }
+    // Note: nebula circles don't need material restoration since we use glow circles
 
     selectedMesh = null;
   }
@@ -700,6 +1022,9 @@ function deleteSelected() {
   } else if (selected.type === 'hyperlane') {
     const hyperlane = selected.data as HyperlaneData;
     mapStore.deleteHyperlane(hyperlane.from, hyperlane.to);
+  } else if (selected.type === 'nebula') {
+    const nebula = selected.data as NebulaData;
+    mapStore.deleteNebula(nebula.name);
   }
 
   deselectCurrent();
@@ -806,6 +1131,21 @@ function updateHover(event: MouseEvent) {
     return;
   }
 
+  // Check nebula circles
+  const nebulaCircleObjects = Array.from(nebulaMeshes.values()).map(n => n.circle);
+  raycaster.params.Line = { threshold: scaledThreshold };
+  const nebulaIntersects = raycaster.intersectObjects(nebulaCircleObjects);
+
+  if (nebulaIntersects.length > 0 && nebulaIntersects[0]) {
+    const hitObject = nebulaIntersects[0].object as THREE.Line;
+    if (hitObject !== hoveredMesh && hitObject !== selectedMesh) {
+      clearHover();
+      hoveredMesh = hitObject;
+      showNebulaHover(hitObject);
+    }
+    return;
+  }
+
   // Nothing hovered
   if (hoveredMesh) {
     clearHover();
@@ -833,6 +1173,17 @@ function showHyperlaneHover(line: THREE.Line) {
   }
 }
 
+function showNebulaHover(circle: THREE.Line) {
+  const userData = circle.userData as { type: string; data: NebulaData };
+  const nebulaData = userData.data;
+  
+  const meshData = nebulaMeshes.get(nebulaData.name);
+  if (meshData && meshData.glowCircle !== selectedNebulaGlowCircle) {
+    meshData.glowCircle.visible = true;
+    hoveredNebulaGlowCircle = meshData.glowCircle;
+  }
+}
+
 function clearHover() {
   hoveredMesh = null;
   
@@ -845,6 +1196,12 @@ function clearHover() {
   if (currentGlowLine) {
     currentGlowLine.visible = false;
     currentGlowLine = null;
+  }
+  
+  // Hide current nebula hover glow (only if not selected)
+  if (hoveredNebulaGlowCircle && hoveredNebulaGlowCircle !== selectedNebulaGlowCircle) {
+    hoveredNebulaGlowCircle.visible = false;
+    hoveredNebulaGlowCircle = null;
   }
 }
 

@@ -58,6 +58,7 @@ export default {
   drawer: {
     systemDetails: "System Details",
     hyperlaneDetails: "Hyperlane Details",
+    nebulaDetails: "Nebula Details",
     id: "ID",
     name: "Name",
     position: "Position",
@@ -66,8 +67,9 @@ export default {
     to: "To",
     type: "Type",
     preventHyperlane: "Prevent Hyperlane",
+    radius: "Radius",
     delete: "Delete",
-    noSelection: "Select a star or hyperlane to view details",
+    noSelection: "Select a star, hyperlane, or nebula to view details",
     confirmDelete: "Are you sure you want to delete this element?"
   },
   messages: {
