@@ -1,0 +1,29 @@
+/* Toolbar and cursor styles */
+
+/* Cursor styles for different tool modes */
+.cursor-select {
+  cursor: default;
+}
+
+.cursor-crosshair {
+  cursor: crosshair;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+/* Canvas cursor overrides based on tool mode */
+.galaxy-scene.tool-select {
+  cursor: default;
+}
+
+.galaxy-scene.tool-addSystem,
+.galaxy-scene.tool-addNebula {
+  cursor: crosshair;
+}
+
+.galaxy-scene.tool-addHyperlane,
+.galaxy-scene.tool-preventHyperlane {
+  cursor: pointer;
+}

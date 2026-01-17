@@ -1,17 +1,26 @@
 <template>
-  <div ref="containerRef" class="galaxy-scene"></div>
+  <div ref="containerRef" :class="['galaxy-scene', cursorClass]"></div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue';
 import * as THREE from 'three';
 import { Line2 } from 'three/examples/jsm/lines/Line2.js';
 import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { useMapStore, type SystemData, type HyperlaneData, type NebulaData } from 'src/stores/map-store';
+import { useToolsStore } from 'src/stores/tools-store';
+
+const emit = defineEmits<{
+  (e: 'duplicateWarning', message: string): void;
+}>();
 
 const mapStore = useMapStore();
+const toolsStore = useToolsStore();
 const containerRef = ref<HTMLDivElement | null>(null);
+
+// Cursor class based on current tool
+const cursorClass = computed(() => `tool-${toolsStore.currentTool}`);
 
 // ThreeJS objects
 let scene: THREE.Scene;
@@ -57,6 +66,29 @@ let selectedNebulaGlowCircle: Line2 | THREE.Line | null = null;
 
 // Nebula hover state
 let hoveredNebulaGlowCircle: Line2 | THREE.Line | null = null;
+
+// === HYPERLANE CREATION STATE ===
+// Preview line for hyperlane creation (from first system to mouse)
+let hyperlanePreviewLine: THREE.Line | null = null;
+const hyperlanePreviewMaterial = new THREE.LineBasicMaterial({
+  color: 0x00bcd4, // Cyan
+  transparent: true,
+  opacity: 0.7,
+  linewidth: 2
+});
+// First system highlight ring (cyan, for hyperlane creation)
+let firstSystemRing: THREE.Mesh | null = null;
+const firstSystemRingGeometry = new THREE.RingGeometry(2.2, 2.8, 32);
+const firstSystemRingMaterial = new THREE.MeshBasicMaterial({
+  color: 0x00bcd4, // Cyan
+  transparent: true,
+  opacity: 0.8,
+  side: THREE.DoubleSide
+});
+// Store the first system's position for preview line
+let firstSystemPosition: THREE.Vector3 | null = null;
+// Current mouse world position for preview line
+let currentMouseWorldPos: THREE.Vector3 = new THREE.Vector3();
 
 // === CAMERA CONTROL STATE ===
 // Camera pivot point (what we rotate around and look at)
@@ -413,6 +445,10 @@ function init() {
   // Create reusable selection ring (not added to scene yet)
   selectionRing = new THREE.Mesh(selectionRingGeometry, selectionRingMaterial);
   selectionRing.rotation.x = 0;
+
+  // Create first system ring for hyperlane creation (cyan)
+  firstSystemRing = new THREE.Mesh(firstSystemRingGeometry, firstSystemRingMaterial);
+  firstSystemRing.rotation.x = 0;
 
   // Create star glow texture
   starGlowTexture = createGlowTexture();
@@ -843,6 +879,37 @@ function onCanvasClick(event: MouseEvent) {
   // Scale threshold based on camera distance for better selection at any zoom level
   const scaledThreshold = Math.max(2, cameraDistance * 0.02);
 
+  // Handle different tool modes
+  if (toolsStore.isSelectMode) {
+    handleSelectModeClick(scaledThreshold);
+  } else if (toolsStore.isAddSystemMode) {
+    handleAddSystemClick();
+  } else if (toolsStore.isAddNebulaMode) {
+    handleAddNebulaClick();
+  } else if (toolsStore.isHyperlaneMode) {
+    handleHyperlaneModeClick(scaledThreshold);
+  }
+}
+
+/**
+ * Get world position from mouse click by raycasting to the XY plane (z=0)
+ */
+function getWorldPositionFromMouse(): THREE.Vector3 | null {
+  // Create a plane at z=0
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const intersection = new THREE.Vector3();
+  
+  const ray = raycaster.ray;
+  if (ray.intersectPlane(plane, intersection)) {
+    return intersection;
+  }
+  return null;
+}
+
+/**
+ * Handle click in select mode - select systems, hyperlanes, or nebulae
+ */
+function handleSelectModeClick(scaledThreshold: number) {
   // Check systems first (priority)
   const systemObjects = Array.from(systemMeshes.values());
   const systemIntersects = raycaster.intersectObjects(systemObjects);
@@ -875,6 +942,148 @@ function onCanvasClick(event: MouseEvent) {
   // Deselect and unfocus if clicking empty space
   deselectCurrent();
   focusPoint = null;
+}
+
+/**
+ * Handle click in add system mode - add a new system at click position
+ */
+function handleAddSystemClick() {
+  const worldPos = getWorldPositionFromMouse();
+  if (!worldPos) return;
+
+  // Round to reasonable precision
+  const x = Math.round(worldPos.x);
+  const y = Math.round(worldPos.y);
+  const z = 0;
+
+  const result = mapStore.addSystem(x, y, z);
+  if (!result.success && result.error) {
+    emit('duplicateWarning', result.error);
+  }
+}
+
+/**
+ * Handle click in add nebula mode - add a new nebula at click position
+ */
+function handleAddNebulaClick() {
+  const worldPos = getWorldPositionFromMouse();
+  if (!worldPos) return;
+
+  // Round to reasonable precision
+  const x = Math.round(worldPos.x);
+  const y = Math.round(worldPos.y);
+  const z = 0;
+
+  const result = mapStore.addNebula(x, y, z, 5); // Default radius of 5
+  if (!result.success && result.error) {
+    emit('duplicateWarning', result.error);
+  }
+}
+
+/**
+ * Handle click in hyperlane mode - select systems to connect
+ */
+function handleHyperlaneModeClick(scaledThreshold: number) {
+  // Only check for system clicks in hyperlane mode
+  const systemObjects = Array.from(systemMeshes.values());
+  const systemIntersects = raycaster.intersectObjects(systemObjects);
+
+  if (systemIntersects.length > 0 && systemIntersects[0]) {
+    const hitMesh = systemIntersects[0].object as THREE.Mesh;
+    const userData = hitMesh.userData as { type: string; data: SystemData };
+    const systemId = userData.data.id;
+
+    if (toolsStore.hyperlaneFirstSystemId === null) {
+      // First system selection
+      toolsStore.setHyperlaneFirstSystem(systemId);
+      firstSystemPosition = hitMesh.position.clone();
+      showFirstSystemRing(hitMesh);
+      createHyperlanePreviewLine(hitMesh.position);
+    } else if (toolsStore.hyperlaneFirstSystemId !== systemId) {
+      // Second system selection - create the hyperlane
+      const type = toolsStore.isAddHyperlaneMode ? 'add' : 'prevent';
+      const result = mapStore.addHyperlane(toolsStore.hyperlaneFirstSystemId, systemId, type);
+      
+      if (!result.success && result.error) {
+        emit('duplicateWarning', result.error);
+      }
+      
+      // Clear hyperlane creation state
+      clearHyperlaneCreationState();
+    }
+    // If clicking the same system, do nothing (user can press Escape to cancel)
+    return;
+  }
+
+  // Clicking empty space in hyperlane mode - do nothing (don't cancel)
+}
+
+/**
+ * Show the first system ring for hyperlane creation
+ */
+function showFirstSystemRing(mesh: THREE.Mesh) {
+  if (!firstSystemRing) return;
+  
+  firstSystemRing.position.copy(mesh.position);
+  firstSystemRing.position.z += 0.2; // Above selection ring
+  scene.add(firstSystemRing);
+}
+
+/**
+ * Create the preview line for hyperlane creation
+ */
+function createHyperlanePreviewLine(fromPosition: THREE.Vector3) {
+  // Remove existing preview line
+  if (hyperlanePreviewLine) {
+    scene.remove(hyperlanePreviewLine);
+    hyperlanePreviewLine.geometry.dispose();
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  const positions = new Float32Array([
+    fromPosition.x, fromPosition.y, fromPosition.z,
+    fromPosition.x, fromPosition.y, fromPosition.z
+  ]);
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  
+  hyperlanePreviewLine = new THREE.Line(geometry, hyperlanePreviewMaterial);
+  scene.add(hyperlanePreviewLine);
+}
+
+/**
+ * Update the preview line endpoint to follow the mouse
+ */
+function updateHyperlanePreviewLine() {
+  if (!hyperlanePreviewLine || !firstSystemPosition) return;
+
+  const positionAttr = hyperlanePreviewLine.geometry.attributes.position;
+  if (!positionAttr) return;
+  
+  const positions = positionAttr.array as Float32Array;
+  positions[3] = currentMouseWorldPos.x;
+  positions[4] = currentMouseWorldPos.y;
+  positions[5] = currentMouseWorldPos.z;
+  positionAttr.needsUpdate = true;
+}
+
+/**
+ * Clear hyperlane creation state (preview line and first system ring)
+ */
+function clearHyperlaneCreationState() {
+  toolsStore.clearHyperlaneSelection();
+  firstSystemPosition = null;
+
+  // Remove first system ring
+  if (firstSystemRing && firstSystemRing.parent) {
+    scene.remove(firstSystemRing);
+  }
+
+  // Remove preview line
+  if (hyperlanePreviewLine) {
+    scene.remove(hyperlanePreviewLine);
+    hyperlanePreviewLine.geometry.dispose();
+    hyperlanePreviewLine = null;
+  }
 }
 
 function selectObject(object: THREE.Mesh | THREE.Line) {
@@ -1092,7 +1301,30 @@ function onMouseMove(event: MouseEvent) {
   } else {
     // Hover detection when not dragging
     updateHover(event);
+    
+    // Update hyperlane preview line if in hyperlane creation mode
+    if (toolsStore.isHyperlaneMode && firstSystemPosition) {
+      updateMouseWorldPosition(event);
+      updateHyperlanePreviewLine();
+    }
   }
+}
+
+/**
+ * Update the current mouse world position for preview line
+ */
+function updateMouseWorldPosition(event: MouseEvent) {
+  if (!containerRef.value || !renderer) return;
+
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+
+  // Raycast to XY plane (z=0)
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  raycaster.ray.intersectPlane(plane, currentMouseWorldPos);
 }
 
 function updateHover(event: MouseEvent) {
@@ -1221,6 +1453,14 @@ function onWheel(event: WheelEvent) {
 function onKeyDown(event: KeyboardEvent) {
   keysPressed.add(event.key);
   
+  // Escape - cancel hyperlane creation
+  if (event.key === 'Escape') {
+    if (toolsStore.hyperlaneFirstSystemId !== null) {
+      clearHyperlaneCreationState();
+      event.preventDefault();
+    }
+  }
+  
   // Delete selected
   if (event.key === 'Delete' && mapStore.selectedElement) {
     deleteSelected();
@@ -1292,6 +1532,12 @@ function cleanup() {
   hoverRingMaterial.dispose();
   selectionRingGeometry.dispose();
   selectionRingMaterial.dispose();
+  firstSystemRingGeometry.dispose();
+  firstSystemRingMaterial.dispose();
+  hyperlanePreviewMaterial.dispose();
+  if (hyperlanePreviewLine) {
+    hyperlanePreviewLine.geometry.dispose();
+  }
   if (starGlowTexture) {
     starGlowTexture.dispose();
   }
@@ -1310,6 +1556,11 @@ watch(() => mapStore.version, () => {
   if (scene) {
     renderMap();
   }
+});
+
+// Watch for tool changes to clear hyperlane creation state
+watch(() => toolsStore.currentTool, () => {
+  clearHyperlaneCreationState();
 });
 
 // Expose deleteSelected for parent component

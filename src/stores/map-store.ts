@@ -674,6 +674,198 @@ export const useMapStore = defineStore('map', () => {
     selectedElement.value = null;
   }
 
+  // === Creation helpers ===
+  
+  /**
+   * Get the next available system ID, filling holes in the sequence.
+   * For example, if systems have IDs [0, 1, 2, 4, 5], returns "3".
+   */
+  function getNextAvailableId(): string {
+    const existingIds = systems.value
+      .map(s => parseInt(s.id, 10))
+      .filter(id => !isNaN(id))
+      .sort((a, b) => a - b);
+    
+    // Find first gap starting from 0
+    let nextId = 0;
+    for (const id of existingIds) {
+      if (id === nextId) {
+        nextId++;
+      } else if (id > nextId) {
+        // Found a gap
+        break;
+      }
+    }
+    
+    return String(nextId);
+  }
+
+  /**
+   * Check if a system exists at the exact coordinates.
+   */
+  function hasSystemAtPosition(x: number, y: number, z: number): boolean {
+    return systems.value.some(s => s.x === x && s.y === y && s.z === z);
+  }
+
+  /**
+   * Check if a nebula exists at the exact coordinates.
+   */
+  function hasNebulaAtPosition(x: number, y: number, z: number): boolean {
+    return nebulae.value.some(n => n.x === x && n.y === y && n.z === z);
+  }
+
+  /**
+   * Check if a hyperlane already exists between two systems (in either direction).
+   */
+  function hasHyperlane(fromId: string, toId: string, type: 'add' | 'prevent'): boolean {
+    return hyperlanes.value.some(h => 
+      h.type === type && (
+        (h.from === fromId && h.to === toId) ||
+        (h.from === toId && h.to === fromId)
+      )
+    );
+  }
+
+  /**
+   * Add a new system at the given coordinates.
+   * Returns success status and error message if applicable.
+   */
+  function addSystem(x: number, y: number, z: number = 0): { success: boolean; error?: string; id?: string } {
+    const scenario = getScenarioBlock();
+    if (!scenario) {
+      return { success: false, error: 'No map loaded' };
+    }
+
+    // Check for duplicate position
+    if (hasSystemAtPosition(x, y, z)) {
+      return { success: false, error: `A system already exists at coordinates (${x}, ${y}, ${z})` };
+    }
+
+    const id = getNextAvailableId();
+    
+    // Create position block
+    const positionBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'x', operator: '=', value: x } as Property,
+        { type: 'Property', key: 'y', operator: '=', value: y } as Property,
+        { type: 'Property', key: 'z', operator: '=', value: z } as Property
+      ]
+    };
+
+    // Create system block
+    const systemBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'id', operator: '=', value: id } as Property,
+        { type: 'Property', key: 'name', operator: '=', value: '' } as Property,
+        { type: 'Property', key: 'position', operator: '=', value: positionBlock } as Property
+      ]
+    };
+
+    // Add system property to scenario
+    const systemProperty: Property = {
+      type: 'Property',
+      key: 'system',
+      operator: '=',
+      value: systemBlock
+    };
+
+    scenario.properties.push(systemProperty);
+    version.value++;
+
+    return { success: true, id };
+  }
+
+  /**
+   * Add a new nebula at the given coordinates with default radius.
+   * Returns success status and error message if applicable.
+   */
+  function addNebula(x: number, y: number, z: number = 0, radius: number = 5): { success: boolean; error?: string } {
+    const scenario = getScenarioBlock();
+    if (!scenario) {
+      return { success: false, error: 'No map loaded' };
+    }
+
+    // Check for duplicate position
+    if (hasNebulaAtPosition(x, y, z)) {
+      return { success: false, error: `A nebula already exists at coordinates (${x}, ${y}, ${z})` };
+    }
+
+    // Create position block
+    const positionBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'x', operator: '=', value: x } as Property,
+        { type: 'Property', key: 'y', operator: '=', value: y } as Property,
+        { type: 'Property', key: 'z', operator: '=', value: z } as Property
+      ]
+    };
+
+    // Create nebula block with empty name (user can edit later)
+    const nebulaBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'name', operator: '=', value: '' } as Property,
+        { type: 'Property', key: 'position', operator: '=', value: positionBlock } as Property,
+        { type: 'Property', key: 'radius', operator: '=', value: radius } as Property
+      ]
+    };
+
+    // Add nebula property to scenario
+    const nebulaProperty: Property = {
+      type: 'Property',
+      key: 'nebula',
+      operator: '=',
+      value: nebulaBlock
+    };
+
+    scenario.properties.push(nebulaProperty);
+    version.value++;
+
+    return { success: true };
+  }
+
+  /**
+   * Add a new hyperlane between two systems.
+   * Returns success status and error message if applicable.
+   */
+  function addHyperlane(fromId: string, toId: string, type: 'add' | 'prevent'): { success: boolean; error?: string } {
+    const scenario = getScenarioBlock();
+    if (!scenario) {
+      return { success: false, error: 'No map loaded' };
+    }
+
+    // Check for duplicate hyperlane
+    if (hasHyperlane(fromId, toId, type)) {
+      const typeLabel = type === 'add' ? 'hyperlane' : 'prevent hyperlane';
+      return { success: false, error: `A ${typeLabel} already exists between systems ${fromId} and ${toId}` };
+    }
+
+    // Create hyperlane block
+    const hyperlaneBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'from', operator: '=', value: fromId } as Property,
+        { type: 'Property', key: 'to', operator: '=', value: toId } as Property
+      ]
+    };
+
+    // Add hyperlane property to scenario
+    const hyperlaneKey = type === 'add' ? 'add_hyperlane' : 'prevent_hyperlane';
+    const hyperlaneProperty: Property = {
+      type: 'Property',
+      key: hyperlaneKey,
+      operator: '=',
+      value: hyperlaneBlock
+    };
+
+    scenario.properties.push(hyperlaneProperty);
+    version.value++;
+
+    return { success: true };
+  }
+
   return {
     // State
     document,
@@ -698,6 +890,14 @@ export const useMapStore = defineStore('map', () => {
     toggleHyperlaneType,
     stringifyDocument,
     hasDocument,
+    // Creation actions
+    getNextAvailableId,
+    hasSystemAtPosition,
+    hasNebulaAtPosition,
+    hasHyperlane,
+    addSystem,
+    addNebula,
+    addHyperlane,
     // Selection
     selectedElement,
     selectElement,
