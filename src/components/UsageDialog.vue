@@ -1,20 +1,40 @@
 <template>
   <q-dialog v-model="dialogOpen" persistent>
-    <q-card style="min-width: 600px; max-width: 900px; max-height: 85vh;" class="column">
+    <q-card style="min-width: 600px; max-width: 900px; max-height: 85vh;" >
       <q-card-section>
         <div class="text-h6">{{ t('usageDialog.title') }}</div>
+        <q-btn
+          flat
+          round
+          dense
+          icon="close"
+          v-close-popup
+          style="position: absolute; top: 8px; right: 8px;"
+        />
       </q-card-section>
 
       <q-card-section class="col scroll q-pa-md">
-        <div class="column q-gutter-md">
+        <div class="column q-gutter-md" style="max-width: 100%; overflow-wrap: break-word;">
           <!-- Navigation Section -->
           <div>
             <div class="text-h6 text-primary q-mb-sm">{{ t('usageDialog.navigationTitle') }}</div>
             <div class="q-ml-md column q-gutter-sm">
-              <div><strong>{{ t('usageDialog.panKeys') }}</strong> {{ t('usageDialog.panKeysDesc') }}</div>
-              <div><strong>{{ t('usageDialog.panMouse') }}</strong> {{ t('usageDialog.panMouseDesc') }}</div>
-              <div><strong>{{ t('usageDialog.rotate') }}</strong> {{ t('usageDialog.rotateDesc') }}</div>
-              <div><strong>{{ t('usageDialog.zoom') }}</strong> {{ t('usageDialog.zoomDesc') }}</div>
+              <div>
+                <div class="text-weight-bold">{{ t('usageDialog.panKeys') }}</div>
+                <div class="text-body2">{{ t('usageDialog.panKeysDesc') }}</div>
+              </div>
+              <div>
+                <div class="text-weight-bold">{{ t('usageDialog.panMouse') }}</div>
+                <div class="text-body2">{{ t('usageDialog.panMouseDesc') }}</div>
+              </div>
+              <div>
+                <div class="text-weight-bold">{{ t('usageDialog.rotate') }}</div>
+                <div class="text-body2">{{ t('usageDialog.rotateDesc') }}</div>
+              </div>
+              <div>
+                <div class="text-weight-bold">{{ t('usageDialog.zoom') }}</div>
+                <div class="text-body2">{{ t('usageDialog.zoomDesc') }}</div>
+              </div>
             </div>
           </div>
 
@@ -25,24 +45,24 @@
             <div class="text-h6 text-primary q-mb-sm">{{ t('usageDialog.toolsTitle') }}</div>
             <div class="q-ml-md column q-gutter-sm">
               <div>
-                <strong>{{ t('usageDialog.selectTool') }}</strong>
-                <div class="q-ml-sm text-body2">{{ t('usageDialog.selectToolDesc') }}</div>
+                <div class="text-weight-bold">{{ t('usageDialog.selectTool') }}</div>
+                <div class="text-body2">{{ t('usageDialog.selectToolDesc') }}</div>
               </div>
               <div>
-                <strong>{{ t('usageDialog.addSystemTool') }}</strong>
-                <div class="q-ml-sm text-body2">{{ t('usageDialog.addSystemToolDesc') }}</div>
+                <div class="text-weight-bold">{{ t('usageDialog.addSystemTool') }}</div>
+                <div class="text-body2">{{ t('usageDialog.addSystemToolDesc') }}</div>
               </div>
               <div>
-                <strong>{{ t('usageDialog.addHyperlaneTool') }}</strong>
-                <div class="q-ml-sm text-body2">{{ t('usageDialog.addHyperlaneToolDesc') }}</div>
+                <div class="text-weight-bold">{{ t('usageDialog.addHyperlaneTool') }}</div>
+                <div class="text-body2">{{ t('usageDialog.addHyperlaneToolDesc') }}</div>
               </div>
               <div>
-                <strong>{{ t('usageDialog.preventHyperlaneTool') }}</strong>
-                <div class="q-ml-sm text-body2">{{ t('usageDialog.preventHyperlaneToolDesc') }}</div>
+                <div class="text-weight-bold">{{ t('usageDialog.preventHyperlaneTool') }}</div>
+                <div class="text-body2">{{ t('usageDialog.preventHyperlaneToolDesc') }}</div>
               </div>
               <div>
-                <strong>{{ t('usageDialog.addNebulaTool') }}</strong>
-                <div class="q-ml-sm text-body2">{{ t('usageDialog.addNebulaToolDesc') }}</div>
+                <div class="text-weight-bold">{{ t('usageDialog.addNebulaTool') }}</div>
+                <div class="text-body2">{{ t('usageDialog.addNebulaToolDesc') }}</div>
               </div>
             </div>
           </div>
@@ -65,16 +85,18 @@
           <div>
             <div class="text-h6 text-primary q-mb-sm">{{ t('usageDialog.shortcutsTitle') }}</div>
             <div class="q-ml-md column q-gutter-sm">
-              <div><strong>{{ t('usageDialog.deleteKey') }}</strong> {{ t('usageDialog.deleteKeyDesc') }}</div>
-              <div><strong>{{ t('usageDialog.escapeKey') }}</strong> {{ t('usageDialog.escapeKeyDesc') }}</div>
+              <div>
+                <div class="text-weight-bold">{{ t('usageDialog.deleteKey') }}</div>
+                <div class="text-body2">{{ t('usageDialog.deleteKeyDesc') }}</div>
+              </div>
+              <div>
+                <div class="text-weight-bold">{{ t('usageDialog.escapeKey') }}</div>
+                <div class="text-body2">{{ t('usageDialog.escapeKeyDesc') }}</div>
+              </div>
             </div>
           </div>
         </div>
       </q-card-section>
-
-      <q-card-actions align="right">
-        <q-btn flat :label="t('usageDialog.close')" color="primary" v-close-popup />
-      </q-card-actions>
     </q-card>
   </q-dialog>
 </template>
