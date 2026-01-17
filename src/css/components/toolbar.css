@@ -20,7 +20,7 @@
 
 .galaxy-scene.tool-addSystem,
 .galaxy-scene.tool-addNebula {
-  cursor: crosshair;
+  cursor: none;
 }
 
 .galaxy-scene.tool-addHyperlane,

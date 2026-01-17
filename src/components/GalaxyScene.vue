@@ -88,7 +88,15 @@ const firstSystemRingMaterial = new THREE.MeshBasicMaterial({
 // Store the first system's position for preview line
 let firstSystemPosition: THREE.Vector3 | null = null;
 // Current mouse world position for preview line
-let currentMouseWorldPos: THREE.Vector3 = new THREE.Vector3();
+const currentMouseWorldPos: THREE.Vector3 = new THREE.Vector3();
+
+// === ADD SYSTEM/NEBULA PREVIEW STATE ===
+// Preview meshes for add system mode
+let systemPreviewMesh: THREE.Mesh | null = null;
+let systemPreviewGlow: THREE.Sprite | null = null;
+// Preview meshes for add nebula mode
+let nebulaPreviewCloud: THREE.Sprite | null = null;
+let nebulaPreviewCircle: THREE.Line | null = null;
 
 // === CAMERA CONTROL STATE ===
 // Camera pivot point (what we rotate around and look at)
@@ -634,8 +642,8 @@ function renderMap() {
     }
   }
 
-  // Center camera on the map
-  if (systems.length > 0) {
+  // Center camera on the map only on initial load (when camera hasn't been moved)
+  if (systems.length > 0 && cameraDistance === 200 && cameraPivot.length() === 0) {
     const center = new THREE.Vector3();
     let maxDist = 0;
     for (const system of systems) {
@@ -887,7 +895,7 @@ function onCanvasClick(event: MouseEvent) {
   } else if (toolsStore.isAddNebulaMode) {
     handleAddNebulaClick();
   } else if (toolsStore.isHyperlaneMode) {
-    handleHyperlaneModeClick(scaledThreshold);
+    handleHyperlaneModeClick();
   }
 }
 
@@ -983,7 +991,7 @@ function handleAddNebulaClick() {
 /**
  * Handle click in hyperlane mode - select systems to connect
  */
-function handleHyperlaneModeClick(scaledThreshold: number) {
+function handleHyperlaneModeClick() {
   // Only check for system clicks in hyperlane mode
   const systemObjects = Array.from(systemMeshes.values());
   const systemIntersects = raycaster.intersectObjects(systemObjects);
@@ -1086,6 +1094,156 @@ function clearHyperlaneCreationState() {
   }
 }
 
+/**
+ * Create preview mesh for add system mode
+ */
+function createSystemPreviewMesh() {
+  if (systemPreviewMesh) return; // Already created
+  
+  // Create semi-transparent star core
+  systemPreviewMesh = new THREE.Mesh(starGeometry, starMaterial.clone());
+  if (systemPreviewMesh.material instanceof THREE.Material) {
+    systemPreviewMesh.material.transparent = true;
+    systemPreviewMesh.material.opacity = 0.75;
+  }
+  scene.add(systemPreviewMesh);
+  
+  // Create semi-transparent glow sprite
+  const glowMaterial = new THREE.SpriteMaterial({
+    map: starGlowTexture,
+    color: 0xffeedd,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    opacity: 0.75
+  });
+  systemPreviewGlow = new THREE.Sprite(glowMaterial);
+  systemPreviewGlow.scale.set(8, 8, 1);
+  scene.add(systemPreviewGlow);
+}
+
+/**
+ * Update system preview position to follow mouse
+ */
+function updateSystemPreviewPosition() {
+  if (!systemPreviewMesh || !systemPreviewGlow) return;
+  
+  const roundedPos = new THREE.Vector3(
+    Math.round(currentMouseWorldPos.x),
+    Math.round(currentMouseWorldPos.y),
+    0
+  );
+  
+  systemPreviewMesh.position.copy(roundedPos);
+  systemPreviewGlow.position.copy(roundedPos);
+}
+
+/**
+ * Clear system preview meshes
+ */
+function clearSystemPreview() {
+  if (systemPreviewMesh) {
+    scene.remove(systemPreviewMesh);
+    if (systemPreviewMesh.material instanceof THREE.Material) {
+      systemPreviewMesh.material.dispose();
+    }
+    systemPreviewMesh = null;
+  }
+  
+  if (systemPreviewGlow) {
+    scene.remove(systemPreviewGlow);
+    if (systemPreviewGlow.material instanceof THREE.SpriteMaterial) {
+      systemPreviewGlow.material.dispose();
+    }
+    systemPreviewGlow = null;
+  }
+}
+
+/**
+ * Create preview mesh for add nebula mode
+ */
+function createNebulaPreviewMesh() {
+  if (nebulaPreviewCloud) return; // Already created
+  
+  const defaultRadius = 5;
+  
+  // Create semi-transparent cloud sprite
+  const seed = Math.random() * 1000;
+  const nebulaTexture = createNebulaTexture(seed);
+  const cloudMaterial = new THREE.SpriteMaterial({
+    map: nebulaTexture,
+    transparent: true,
+    blending: THREE.NormalBlending,
+    depthWrite: false,
+    opacity: 0.75
+  });
+  nebulaPreviewCloud = new THREE.Sprite(cloudMaterial);
+  const scale = defaultRadius * 3.2;
+  nebulaPreviewCloud.scale.set(scale, scale, 1);
+  nebulaPreviewCloud.renderOrder = -1;
+  scene.add(nebulaPreviewCloud);
+  
+  // Create semi-transparent radius circle
+  const circlePoints: THREE.Vector3[] = [];
+  const segments = 64;
+  for (let i = 0; i <= segments; i++) {
+    const angle = (i / segments) * Math.PI * 2;
+    circlePoints.push(new THREE.Vector3(
+      Math.cos(angle) * defaultRadius,
+      Math.sin(angle) * defaultRadius,
+      0
+    ));
+  }
+  
+  const circleGeometry = new THREE.BufferGeometry().setFromPoints(circlePoints);
+  const circleMaterial = nebulaCircleMaterial.clone();
+  circleMaterial.transparent = true;
+  circleMaterial.opacity = 0.75;
+  nebulaPreviewCircle = new THREE.Line(circleGeometry, circleMaterial);
+  scene.add(nebulaPreviewCircle);
+}
+
+/**
+ * Update nebula preview position to follow mouse
+ */
+function updateNebulaPreviewPosition() {
+  if (!nebulaPreviewCloud || !nebulaPreviewCircle) return;
+  
+  const roundedPos = new THREE.Vector3(
+    Math.round(currentMouseWorldPos.x),
+    Math.round(currentMouseWorldPos.y),
+    -0.3
+  );
+  
+  nebulaPreviewCloud.position.set(roundedPos.x, roundedPos.y, -0.5);
+  nebulaPreviewCircle.position.copy(roundedPos);
+}
+
+/**
+ * Clear nebula preview meshes
+ */
+function clearNebulaPreview() {
+  if (nebulaPreviewCloud) {
+    scene.remove(nebulaPreviewCloud);
+    if (nebulaPreviewCloud.material instanceof THREE.SpriteMaterial) {
+      if (nebulaPreviewCloud.material.map) {
+        nebulaPreviewCloud.material.map.dispose();
+      }
+      nebulaPreviewCloud.material.dispose();
+    }
+    nebulaPreviewCloud = null;
+  }
+  
+  if (nebulaPreviewCircle) {
+    scene.remove(nebulaPreviewCircle);
+    nebulaPreviewCircle.geometry.dispose();
+    if (nebulaPreviewCircle.material instanceof THREE.Material) {
+      nebulaPreviewCircle.material.dispose();
+    }
+    nebulaPreviewCircle = null;
+  }
+}
+
 function selectObject(object: THREE.Mesh | THREE.Line) {
   // Deselect previous visual highlight
   deselectCurrent();
@@ -1105,8 +1263,14 @@ function selectObject(object: THREE.Mesh | THREE.Line) {
     // Show selection ring
     showSelectionRing(object);
     // Set focus point and animate camera to it
-    focusPoint = object.position.clone();
     targetPivot = object.position.clone();
+    if (focusPoint) {
+      // If we already have a focus point, animate from it
+      // focusPoint will be updated by the animation loop
+    } else {
+      // Initialize focusPoint so animation works
+      focusPoint = cameraPivot.clone();
+    }
   } else if (userData.type === 'hyperlane' && object instanceof THREE.Line) {
     object.material = hyperlaneSelectedMaterial.clone();
     // Show selection glow
@@ -1121,8 +1285,12 @@ function selectObject(object: THREE.Mesh | THREE.Line) {
         (fromSystem.y + toSystem.y) / 2,
         ((fromSystem.z ?? 0) + (toSystem.z ?? 0)) / 2
       );
-      focusPoint = center;
       targetPivot = center.clone();
+      if (focusPoint) {
+        // If we already have a focus point, animate from it
+      } else {
+        focusPoint = cameraPivot.clone();
+      }
     }
   } else if (userData.type === 'nebula' && object instanceof THREE.Line) {
     // Show selection glow for nebula (orange)
@@ -1130,8 +1298,12 @@ function selectObject(object: THREE.Mesh | THREE.Line) {
     // Set focus point to nebula center
     const nebulaData = userData.data as NebulaData;
     const center = new THREE.Vector3(nebulaData.x, nebulaData.y, nebulaData.z);
-    focusPoint = center;
     targetPivot = center.clone();
+    if (focusPoint) {
+      // If we already have a focus point, animate from it
+    } else {
+      focusPoint = cameraPivot.clone();
+    }
   }
 }
 
@@ -1302,10 +1474,28 @@ function onMouseMove(event: MouseEvent) {
     // Hover detection when not dragging
     updateHover(event);
     
+    // Update mouse world position for preview cursors
+    updateMouseWorldPosition(event);
+    
     // Update hyperlane preview line if in hyperlane creation mode
     if (toolsStore.isHyperlaneMode && firstSystemPosition) {
-      updateMouseWorldPosition(event);
       updateHyperlanePreviewLine();
+    }
+    
+    // Update system preview if in add system mode
+    if (toolsStore.isAddSystemMode) {
+      if (!systemPreviewMesh) {
+        createSystemPreviewMesh();
+      }
+      updateSystemPreviewPosition();
+    }
+    
+    // Update nebula preview if in add nebula mode
+    if (toolsStore.isAddNebulaMode) {
+      if (!nebulaPreviewCloud) {
+        createNebulaPreviewMesh();
+      }
+      updateNebulaPreviewPosition();
     }
   }
 }
@@ -1558,9 +1748,11 @@ watch(() => mapStore.version, () => {
   }
 });
 
-// Watch for tool changes to clear hyperlane creation state
+// Watch for tool changes to clear hyperlane creation state and previews
 watch(() => toolsStore.currentTool, () => {
   clearHyperlaneCreationState();
+  clearSystemPreview();
+  clearNebulaPreview();
 });
 
 // Expose deleteSelected for parent component

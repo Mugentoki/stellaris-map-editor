@@ -28,6 +28,16 @@
               </q-list>
             </q-menu>
           </div>
+          <div class="cursor-pointer non-selectable">
+            {{ t('menu.help') }}
+            <q-menu>
+              <q-list dense style="min-width: 100px">
+                <q-item clickable v-close-popup @click="usageDialogOpen = true">
+                  <q-item-section>{{ t('menu.usage') }}</q-item-section>
+                </q-item>
+              </q-list>
+            </q-menu>
+          </div>
           <!--<div class="cursor-pointer non-selectable">
             Edit
             <q-menu>
@@ -256,6 +266,7 @@
     <OpenMapDialog v-model="openDialogOpen" />
     <MapSettingsDialog v-model="settingsDialogOpen" />
     <SaveMapDialog v-model="saveDialogOpen" />
+    <UsageDialog v-model="usageDialogOpen" />
 
   </q-layout>
 </template>
@@ -269,6 +280,7 @@ import { MAP_LIMITS } from 'src/constants/map-limits'
 import OpenMapDialog from 'src/components/OpenMapDialog.vue'
 import MapSettingsDialog from 'src/components/MapSettingsDialog.vue'
 import SaveMapDialog from 'src/components/SaveMapDialog.vue'
+import UsageDialog from 'src/components/UsageDialog.vue'
 
 const { t } = useI18n()
 const $q = useQuasar()
@@ -281,6 +293,7 @@ const version = __APP_VERSION__
 const openDialogOpen = ref(false)
 const settingsDialogOpen = ref(false)
 const saveDialogOpen = ref(false)
+const usageDialogOpen = ref(false)
 
 // Selection state - now uses Pinia store directly
 const selectedElement = computed(() => mapStore.selectedElement)
