@@ -436,6 +436,12 @@
     <SaveMapDialog v-model="saveDialogOpen" />
     <UsageDialog v-model="usageDialogOpen" />
 
+    <!-- Loading overlay -->
+    <q-inner-loading :showing="mapStore.isLoading" style="z-index: 9999; background-color: rgba(0, 0, 0, 0.75);">
+      <q-spinner-gears size="50px" color="white" />
+      <div class="text-white q-mt-md">{{ t('messages.loadingMap') }}</div>
+    </q-inner-loading>
+
   </q-layout>
 </template>
 

@@ -124,6 +124,7 @@ export default {
     mapCreated: "New map created",
     parseError: "Failed to parse map: {error}",
     elementDeleted: "Element deleted",
-    noMapOpen: "No map is currently open"
+    noMapOpen: "No map is currently open",
+    loadingMap: "Loading map..."
   }
 };

@@ -115,7 +115,7 @@ function handleFileSelect(event: Event) {
     const reader = new FileReader();
     reader.onload = (e) => {
       const content = e.target?.result as string;
-      loadMap(content);
+      void loadMap(content);
     };
     reader.onerror = () => {
       errorMessage.value = t('messages.parseError', { error: 'Failed to read file' });
@@ -125,12 +125,12 @@ function handleFileSelect(event: Event) {
 }
 
 function openFromText() {
-  loadMap(textContent.value);
+  void loadMap(textContent.value);
 }
 
-function loadMap(content: string) {
+async function loadMap(content: string) {
   errorMessage.value = '';
-  const result = mapStore.loadFromText(content);
+  const result = await mapStore.loadFromText(content);
   if (result.success) {
     $q.notify({
       type: 'positive',

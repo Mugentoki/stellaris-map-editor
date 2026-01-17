@@ -610,10 +610,10 @@ function handleKeyboardPan() {
     screenDy += adjustedPanSpeed; // S = move galaxy down on screen
   }
   if (keysPressed.has('a') || keysPressed.has('A')) {
-    screenDx -= adjustedPanSpeed; // A = move view left on screen
+    screenDx += adjustedPanSpeed; // A = move view right on screen
   }
   if (keysPressed.has('d') || keysPressed.has('D')) {
-    screenDx += adjustedPanSpeed; // D = move view right on screen
+    screenDx -= adjustedPanSpeed; // D = move view left on screen
   }
   
   if (screenDx !== 0 || screenDy !== 0) {
@@ -932,7 +932,7 @@ function createDynamicRangeVisualization(system: SystemData) {
   const material = new THREE.MeshBasicMaterial({
     color: 0x00ddff,
     transparent: true,
-    opacity: 0.5,
+    opacity: 0.1,
     depthWrite: false
   });
   
@@ -949,7 +949,7 @@ function createDynamicRangeVisualization(system: SystemData) {
   const wireframeMaterial = new THREE.LineBasicMaterial({
     color: 0x00ddff,
     transparent: true,
-    opacity: 0.6
+    opacity: 0.25
   });
   const wireframe = new THREE.LineSegments(edges, wireframeMaterial);
   wireframe.position.copy(rangeMesh.position);

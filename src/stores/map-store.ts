@@ -131,6 +131,8 @@ export const useMapStore = defineStore('map', () => {
   const clausewitzDoc = shallowRef<ClausewitzDocument | null>(null);
   // Version counter for manual reactivity triggering
   const version = ref(0);
+  // Loading state for parsing large maps
+  const isLoading = ref(false);
 
   // Helper to get the scenario block
   function getScenarioBlock(): Block | null {
@@ -407,15 +409,24 @@ export const useMapStore = defineStore('map', () => {
   });
 
   // Actions
-  function loadFromText(text: string): { success: boolean; error?: string } {
-    const result = parse(text);
-    if (result.success && result.document) {
-      document.value = result.document;
-      clausewitzDoc.value = new ClausewitzDocument(result.document);
-      version.value++;
-      return { success: true };
-    } else {
-      return { success: false, error: result.error || 'Unknown parse error' };
+  async function loadFromText(text: string): Promise<{ success: boolean; error?: string }> {
+    isLoading.value = true;
+    
+    // Use setTimeout to allow UI to update before heavy parsing
+    await new Promise(resolve => setTimeout(resolve, 50));
+    
+    try {
+      const result = parse(text);
+      if (result.success && result.document) {
+        document.value = result.document;
+        clausewitzDoc.value = new ClausewitzDocument(result.document);
+        version.value++;
+        return { success: true };
+      } else {
+        return { success: false, error: result.error || 'Unknown parse error' };
+      }
+    } finally {
+      isLoading.value = false;
     }
   }
 
@@ -1175,6 +1186,7 @@ export const useMapStore = defineStore('map', () => {
     document,
     clausewitzDoc,
     version,
+    isLoading,
     // Getters
     systems,
     hyperlanes,
