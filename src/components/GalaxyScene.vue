@@ -1,5 +1,5 @@
 <template>
-  <div ref="containerRef" :class="['galaxy-scene', cursorClass]"></div>
+  <div ref="containerRef" :class="['galaxy-scene', cursorClass, { 'resizing-nebula': isAdjustingNebulaRadius }]"></div>
 </template>
 
 <script setup lang="ts">
@@ -97,6 +97,12 @@ let systemPreviewGlow: THREE.Sprite | null = null;
 // Preview meshes for add nebula mode
 let nebulaPreviewCloud: THREE.Sprite | null = null;
 let nebulaPreviewCircle: THREE.Line | null = null;
+// Nebula radius adjustment state
+let isAdjustingNebulaRadius = false;
+let nebulaPlacementCenter: THREE.Vector3 | null = null;
+let currentNebulaRadius = 5; // Default radius
+const minNebulaRadius = 1;
+const maxNebulaRadius = 500;
 
 // === CAMERA CONTROL STATE ===
 // Camera pivot point (what we rotate around and look at)
@@ -893,11 +899,10 @@ function onCanvasClick(event: MouseEvent) {
     handleSelectModeClick(scaledThreshold);
   } else if (toolsStore.isAddSystemMode) {
     handleAddSystemClick();
-  } else if (toolsStore.isAddNebulaMode) {
-    handleAddNebulaClick();
   } else if (toolsStore.isHyperlaneMode) {
     handleHyperlaneModeClick();
   }
+  // Note: addNebula mode handled by mouse down/up for radius adjustment
 }
 
 /**
@@ -940,7 +945,8 @@ function handleSelectModeClick(scaledThreshold: number) {
 
   // Check nebula circles with scaled threshold
   const nebulaCircleObjects = Array.from(nebulaMeshes.values()).map(n => n.circle);
-  raycaster.params.Line = { threshold: scaledThreshold };
+  // Use a larger threshold for nebulae to account for potentially very large circles
+  raycaster.params.Line = { threshold: Math.max(5, scaledThreshold * 2) };
   const nebulaIntersects = raycaster.intersectObjects(nebulaCircleObjects);
 
   if (nebulaIntersects.length > 0 && nebulaIntersects[0]) {
@@ -972,9 +978,9 @@ function handleAddSystemClick() {
 }
 
 /**
- * Handle click in add nebula mode - add a new nebula at click position
+ * Start nebula placement - begin radius adjustment
  */
-function handleAddNebulaClick() {
+function startNebulaPlacement() {
   const worldPos = getWorldPositionFromMouse();
   if (!worldPos) return;
 
@@ -983,10 +989,38 @@ function handleAddNebulaClick() {
   const y = Math.round(worldPos.y);
   const z = 0;
 
-  const result = mapStore.addNebula(x, y, z, 5); // Default radius of 5
+  // Store placement center and enter radius adjustment mode
+  nebulaPlacementCenter = new THREE.Vector3(x, y, z);
+  currentNebulaRadius = 5; // Reset to default
+  isAdjustingNebulaRadius = true;
+  
+  // Create preview if it doesn't exist
+  if (!nebulaPreviewCloud) {
+    createNebulaPreviewMesh();
+  }
+}
+
+/**
+ * Finish nebula placement - add nebula with chosen radius
+ */
+function finishNebulaPlacement() {
+  if (!isAdjustingNebulaRadius || !nebulaPlacementCenter) return;
+  
+  const result = mapStore.addNebula(
+    nebulaPlacementCenter.x,
+    nebulaPlacementCenter.y,
+    nebulaPlacementCenter.z,
+    currentNebulaRadius
+  );
+  
   if (!result.success && result.error) {
     emit('duplicateWarning', result.error);
   }
+  
+  // Reset state
+  isAdjustingNebulaRadius = false;
+  nebulaPlacementCenter = null;
+  currentNebulaRadius = 5; // Reset to default for next placement
 }
 
 /**
@@ -1166,7 +1200,7 @@ function clearSystemPreview() {
 function createNebulaPreviewMesh() {
   if (nebulaPreviewCloud) return; // Already created
   
-  const defaultRadius = 5;
+  const radius = currentNebulaRadius;
   
   // Create semi-transparent cloud sprite
   const seed = Math.random() * 1000;
@@ -1179,19 +1213,36 @@ function createNebulaPreviewMesh() {
     opacity: 0.75
   });
   nebulaPreviewCloud = new THREE.Sprite(cloudMaterial);
-  const scale = defaultRadius * 3.2;
+  const scale = radius * 3.2;
   nebulaPreviewCloud.scale.set(scale, scale, 1);
   nebulaPreviewCloud.renderOrder = -1;
   scene.add(nebulaPreviewCloud);
   
   // Create semi-transparent radius circle
+  updateNebulaPreviewCircle(radius);
+}
+
+/**
+ * Update or create the nebula preview circle with given radius
+ */
+function updateNebulaPreviewCircle(radius: number) {
+  // Remove old circle if it exists
+  if (nebulaPreviewCircle) {
+    scene.remove(nebulaPreviewCircle);
+    nebulaPreviewCircle.geometry.dispose();
+    if (nebulaPreviewCircle.material instanceof THREE.Material) {
+      nebulaPreviewCircle.material.dispose();
+    }
+  }
+  
+  // Create new circle with updated radius
   const circlePoints: THREE.Vector3[] = [];
   const segments = 64;
   for (let i = 0; i <= segments; i++) {
     const angle = (i / segments) * Math.PI * 2;
     circlePoints.push(new THREE.Vector3(
-      Math.cos(angle) * defaultRadius,
-      Math.sin(angle) * defaultRadius,
+      Math.cos(angle) * radius,
+      Math.sin(angle) * radius,
       0
     ));
   }
@@ -1210,14 +1261,38 @@ function createNebulaPreviewMesh() {
 function updateNebulaPreviewPosition() {
   if (!nebulaPreviewCloud || !nebulaPreviewCircle) return;
   
-  const roundedPos = new THREE.Vector3(
-    Math.round(currentMouseWorldPos.x),
-    Math.round(currentMouseWorldPos.y),
-    -0.3
-  );
+  let centerPos: THREE.Vector3;
   
-  nebulaPreviewCloud.position.set(roundedPos.x, roundedPos.y, -0.5);
-  nebulaPreviewCircle.position.copy(roundedPos);
+  if (isAdjustingNebulaRadius && nebulaPlacementCenter) {
+    // During radius adjustment, keep center fixed
+    centerPos = nebulaPlacementCenter;
+    
+    // Calculate radius based on distance from center to mouse
+    const distance = Math.sqrt(
+      Math.pow(currentMouseWorldPos.x - centerPos.x, 2) +
+      Math.pow(currentMouseWorldPos.y - centerPos.y, 2)
+    );
+    
+    // Clamp radius
+    currentNebulaRadius = Math.max(minNebulaRadius, Math.min(maxNebulaRadius, Math.round(distance)));
+    
+    // Update cloud scale
+    const scale = currentNebulaRadius * 3.2;
+    nebulaPreviewCloud.scale.set(scale, scale, 1);
+    
+    // Update circle radius
+    updateNebulaPreviewCircle(currentNebulaRadius);
+  } else {
+    // Normal preview mode - follow mouse
+    centerPos = new THREE.Vector3(
+      Math.round(currentMouseWorldPos.x),
+      Math.round(currentMouseWorldPos.y),
+      -0.3
+    );
+  }
+  
+  nebulaPreviewCloud.position.set(centerPos.x, centerPos.y, -0.5);
+  nebulaPreviewCircle.position.copy(centerPos);
 }
 
 /**
@@ -1420,7 +1495,13 @@ function deleteSelected() {
 // === INPUT HANDLERS ===
 
 function onMouseDown(event: MouseEvent) {
-  if (event.button === 1) {
+  if (event.button === 0) {
+    // Left mouse button
+    if (toolsStore.isAddNebulaMode) {
+      startNebulaPlacement();
+      event.preventDefault();
+    }
+  } else if (event.button === 1) {
     // Middle mouse button - pan
     isMiddleMouseDown = true;
     lastMouseX = event.clientX;
@@ -1436,7 +1517,12 @@ function onMouseDown(event: MouseEvent) {
 }
 
 function onMouseUp(event: MouseEvent) {
-  if (event.button === 1) {
+  if (event.button === 0) {
+    // Left mouse button
+    if (isAdjustingNebulaRadius) {
+      finishNebulaPlacement();
+    }
+  } else if (event.button === 1) {
     isMiddleMouseDown = false;
   } else if (event.button === 2) {
     isRightMouseDown = false;
@@ -1560,7 +1646,8 @@ function updateHover(event: MouseEvent) {
 
   // Check nebula circles
   const nebulaCircleObjects = Array.from(nebulaMeshes.values()).map(n => n.circle);
-  raycaster.params.Line = { threshold: scaledThreshold };
+  // Use a larger threshold for nebulae to account for potentially very large circles
+  raycaster.params.Line = { threshold: Math.max(5, scaledThreshold * 2) };
   const nebulaIntersects = raycaster.intersectObjects(nebulaCircleObjects);
 
   if (nebulaIntersects.length > 0 && nebulaIntersects[0]) {

@@ -23,6 +23,10 @@
   cursor: none;
 }
 
+.galaxy-scene.tool-addNebula.resizing-nebula {
+  cursor: ew-resize;
+}
+
 .galaxy-scene.tool-addHyperlane,
 .galaxy-scene.tool-preventHyperlane {
   cursor: pointer;
