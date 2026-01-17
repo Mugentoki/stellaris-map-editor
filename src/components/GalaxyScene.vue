@@ -490,15 +490,16 @@ function updateCameraPosition() {
   const z = pivot.z + cameraDistance * Math.cos(cameraTilt);
   
   camera.position.set(x, y, z);
-  camera.lookAt(pivot);
   
-  // Keep the camera's up vector aligned properly for rotation
+  // Set the camera's up vector BEFORE lookAt to prevent wobbling
   // Calculate the "up" direction based on rotation
   camera.up.set(
     -Math.sin(cameraRotation),
     -Math.cos(cameraRotation),
     0
-  ).normalize();
+  );
+  
+  camera.lookAt(pivot);
 }
 
 function animate() {
