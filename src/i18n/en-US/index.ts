@@ -105,7 +105,19 @@ export default {
     radius: "Radius",
     delete: "Delete",
     noSelection: "Select a star, hyperlane, or nebula to view details",
-    confirmDelete: "Are you sure you want to delete this element?"
+    confirmDelete: "Are you sure you want to delete this element?",
+    allDynamic: "All Coordinates Dynamic",
+    dynamicX: "Dynamic X",
+    dynamicY: "Dynamic Y",
+    dynamicZ: "Dynamic Z",
+    min: "Min",
+    max: "Max",
+    minMaxError: "Min must be less than Max",
+    spawnWeight: "Spawn Weight",
+    enableSpawnWeight: "Enable Spawn Weight",
+    baseValue: "Base Value",
+    modifier: "Modifier (Clausewitz syntax)",
+    modifierInvalidSyntax: "Invalid modifier syntax"
   },
   messages: {
     mapLoaded: "Map loaded successfully",

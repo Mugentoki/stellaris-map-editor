@@ -91,42 +91,171 @@
             @update:model-value="(val: string | number | null) => handleUpdateSystem('name', String(val ?? ''))"
           />
           
+          <q-separator />
+          
           <div class="text-subtitle2">{{ t('drawer.position') }}</div>
-          <div class="row q-gutter-sm">
-            <q-input
-              :model-value="(selectedElement.data as SystemData).x"
-              label="X"
-              outlined
-              dense
-              type="number"
-              :min="MAP_LIMITS.XY_MIN"
-              :max="MAP_LIMITS.XY_MAX"
-              class="col"
-              @update:model-value="(val: string | number | null) => handleUpdateSystem('x', Number(val))"
+          
+          <!-- Master toggle for all coordinates -->
+          <q-toggle
+            :model-value="!!(selectedElement.data as SystemData).isDynamicX && !!(selectedElement.data as SystemData).isDynamicY && !!(selectedElement.data as SystemData).isDynamicZ"
+            :label="t('drawer.allDynamic')"
+            @update:model-value="handleToggleAllDynamic"
+          />
+          
+          <!-- X Coordinate -->
+          <div class="column q-gutter-sm">
+            <q-toggle
+              :model-value="!!(selectedElement.data as SystemData).isDynamicX"
+              :label="t('drawer.dynamicX')"
+              @update:model-value="(val: boolean) => handleToggleDynamicCoord('x', val)"
             />
-            <q-input
-              :model-value="(selectedElement.data as SystemData).y"
-              label="Y"
-              outlined
-              dense
-              type="number"
-              :min="MAP_LIMITS.XY_MIN"
-              :max="MAP_LIMITS.XY_MAX"
-              class="col"
-              @update:model-value="(val: string | number | null) => handleUpdateSystem('y', Number(val))"
-            />
-            <q-input
-              :model-value="(selectedElement.data as SystemData).z"
-              label="Z"
-              outlined
-              dense
-              type="number"
-              :min="MAP_LIMITS.Z_MIN"
-              :max="MAP_LIMITS.Z_MAX"
-              class="col"
-              @update:model-value="(val: string | number | null) => handleUpdateSystem('z', Number(val))"
-            />
+            <div v-if="!(selectedElement.data as SystemData).isDynamicX" class="row q-gutter-sm">
+              <q-input
+                :model-value="(selectedElement.data as SystemData).x"
+                label="X"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.XY_MIN"
+                :max="MAP_LIMITS.XY_MAX"
+                class="col"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('x', clampValue(Number(val), MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'x', MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX)"
+              />
+            </div>
+            <div v-else class="row q-gutter-sm">
+              <q-input
+                :model-value="(selectedElement.data as SystemData).xMin"
+                :label="t('drawer.min')"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.XY_MIN"
+                :max="MAP_LIMITS.XY_MAX"
+                class="col"
+                :error="!!xMinMaxError"
+                :error-message="xMinMaxError"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('xMin', clampValue(Number(val), MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'xMin', MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX)"
+              />
+              <q-input
+                :model-value="(selectedElement.data as SystemData).xMax"
+                :label="t('drawer.max')"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.XY_MIN"
+                :max="MAP_LIMITS.XY_MAX"
+                class="col"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('xMax', clampValue(Number(val), MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'xMax', MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX)"
+              />
+            </div>
           </div>
+          
+          <!-- Y Coordinate -->
+          <div class="column q-gutter-sm">
+            <q-toggle
+              :model-value="!!(selectedElement.data as SystemData).isDynamicY"
+              :label="t('drawer.dynamicY')"
+              @update:model-value="(val: boolean) => handleToggleDynamicCoord('y', val)"
+            />
+            <div v-if="!(selectedElement.data as SystemData).isDynamicY" class="row q-gutter-sm">
+              <q-input
+                :model-value="(selectedElement.data as SystemData).y"
+                label="Y"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.XY_MIN"
+                :max="MAP_LIMITS.XY_MAX"
+                class="col"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('y', clampValue(Number(val), MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'y', MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX)"
+              />
+            </div>
+            <div v-else class="row q-gutter-sm">
+              <q-input
+                :model-value="(selectedElement.data as SystemData).yMin"
+                :label="t('drawer.min')"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.XY_MIN"
+                :max="MAP_LIMITS.XY_MAX"
+                class="col"
+                :error="!!yMinMaxError"
+                :error-message="yMinMaxError"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('yMin', clampValue(Number(val), MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'yMin', MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX)"
+              />
+              <q-input
+                :model-value="(selectedElement.data as SystemData).yMax"
+                :label="t('drawer.max')"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.XY_MIN"
+                :max="MAP_LIMITS.XY_MAX"
+                class="col"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('yMax', clampValue(Number(val), MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'yMax', MAP_LIMITS.XY_MIN, MAP_LIMITS.XY_MAX)"
+              />
+            </div>
+          </div>
+          
+          <!-- Z Coordinate -->
+          <div class="column q-gutter-sm">
+            <q-toggle
+              :model-value="!!(selectedElement.data as SystemData).isDynamicZ"
+              :label="t('drawer.dynamicZ')"
+              @update:model-value="(val: boolean) => handleToggleDynamicCoord('z', val)"
+            />
+            <div v-if="!(selectedElement.data as SystemData).isDynamicZ" class="row q-gutter-sm">
+              <q-input
+                :model-value="(selectedElement.data as SystemData).z"
+                label="Z"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.Z_MIN"
+                :max="MAP_LIMITS.Z_MAX"
+                class="col"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('z', clampValue(Number(val), MAP_LIMITS.Z_MIN, MAP_LIMITS.Z_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'z', MAP_LIMITS.Z_MIN, MAP_LIMITS.Z_MAX)"
+              />
+            </div>
+            <div v-else class="row q-gutter-sm">
+              <q-input
+                :model-value="(selectedElement.data as SystemData).zMin"
+                :label="t('drawer.min')"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.Z_MIN"
+                :max="MAP_LIMITS.Z_MAX"
+                class="col"
+                :error="!!zMinMaxError"
+                :error-message="zMinMaxError"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('zMin', clampValue(Number(val), MAP_LIMITS.Z_MIN, MAP_LIMITS.Z_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'zMin', MAP_LIMITS.Z_MIN, MAP_LIMITS.Z_MAX)"
+              />
+              <q-input
+                :model-value="(selectedElement.data as SystemData).zMax"
+                :label="t('drawer.max')"
+                outlined
+                dense
+                type="number"
+                :min="MAP_LIMITS.Z_MIN"
+                :max="MAP_LIMITS.Z_MAX"
+                class="col"
+                @update:model-value="(val: string | number | null) => handleUpdateSystem('zMax', clampValue(Number(val), MAP_LIMITS.Z_MIN, MAP_LIMITS.Z_MAX))"
+                @blur="(evt: any) => handleClampInput(evt, 'zMax', MAP_LIMITS.Z_MIN, MAP_LIMITS.Z_MAX)"
+              />
+            </div>
+          </div>
+
+          <q-separator />
 
           <q-input
             :model-value="(selectedElement.data as SystemData).initializer || ''"
@@ -135,6 +264,45 @@
             dense
             @update:model-value="(val: string | number | null) => handleUpdateSystem('initializer', String(val ?? ''))"
           />
+          
+          <q-separator />
+          
+          <!-- Spawn Weight Section -->
+          <q-expansion-item
+            :label="t('drawer.spawnWeight')"
+            icon="bar_chart"
+          >
+            <div class="column q-gutter-md q-pa-md">
+              <q-toggle
+                :model-value="!!(selectedElement.data as SystemData).spawnWeight"
+                :label="t('drawer.enableSpawnWeight')"
+                @update:model-value="handleToggleSpawnWeight"
+              />
+              
+              <div v-if="!!(selectedElement.data as SystemData).spawnWeight" class="column q-gutter-sm">
+                <q-input
+                  :model-value="(selectedElement.data as SystemData).spawnWeight?.base ?? 0"
+                  :label="t('drawer.baseValue')"
+                  outlined
+                  dense
+                  type="number"
+                  @update:model-value="(val: string | number | null) => handleUpdateSpawnWeightBase(Number(val ?? 0))"
+                />
+                
+                <q-input
+                  :model-value="spawnWeightModifierText"
+                  :label="t('drawer.modifier')"
+                  outlined
+                  type="textarea"
+                  rows="4"
+                  style="overflow-y: auto"
+                  :error="!!modifierSyntaxError"
+                  :error-message="modifierSyntaxError"
+                  @update:model-value="handleUpdateSpawnWeightModifier"
+                />
+              </div>
+            </div>
+          </q-expansion-item>
 
           <q-btn
             color="negative"
@@ -298,6 +466,52 @@ const usageDialogOpen = ref(false)
 // Selection state - now uses Pinia store directly
 const selectedElement = computed(() => mapStore.selectedElement)
 
+// Validation errors for dynamic coordinates
+const xMinMaxError = computed(() => {
+  if (selectedElement.value?.type === 'system') {
+    const system = selectedElement.value.data as SystemData
+    if (system.isDynamicX && system.xMin !== undefined && system.xMax !== undefined) {
+      return system.xMin >= system.xMax ? t('drawer.minMaxError') : ''
+    }
+  }
+  return ''
+})
+
+const yMinMaxError = computed(() => {
+  if (selectedElement.value?.type === 'system') {
+    const system = selectedElement.value.data as SystemData
+    if (system.isDynamicY && system.yMin !== undefined && system.yMax !== undefined) {
+      return system.yMin >= system.yMax ? t('drawer.minMaxError') : ''
+    }
+  }
+  return ''
+})
+
+const zMinMaxError = computed(() => {
+  if (selectedElement.value?.type === 'system') {
+    const system = selectedElement.value.data as SystemData
+    if (system.isDynamicZ && system.zMin !== undefined && system.zMax !== undefined) {
+      return system.zMin >= system.zMax ? t('drawer.minMaxError') : ''
+    }
+  }
+  return ''
+})
+
+// Spawn weight modifier text
+const spawnWeightModifierText = computed(() => {
+  if (selectedElement.value?.type === 'system') {
+    const system = selectedElement.value.data as SystemData
+    if (system.spawnWeight?.modifier) {
+      // Convert modifier object to Clausewitz syntax
+      const entries = Object.entries(system.spawnWeight.modifier)
+      return entries.map(([key, value]) => `${key} = ${typeof value === 'string' ? value : JSON.stringify(value)}`).join('\n')
+    }
+  }
+  return ''
+})
+
+const modifierSyntaxError = ref('')
+
 function toggleRightDrawer() {
   rightDrawerOpen.value = !rightDrawerOpen.value
 }
@@ -336,7 +550,7 @@ function handleDeleteSelected() {
   }
 }
 
-function handleUpdateSystem(field: 'name' | 'x' | 'y' | 'z' | 'initializer', value: string | number) {
+function handleUpdateSystem(field: string, value: string | number) {
   if (!selectedElement.value || selectedElement.value.type !== 'system') return
   
   const system = selectedElement.value.data as SystemData
@@ -355,5 +569,130 @@ function handleToggleHyperlaneType() {
   
   const hyperlane = selectedElement.value.data as HyperlaneData
   mapStore.toggleHyperlaneType(hyperlane.from, hyperlane.to)
+}
+
+// Helper function to clamp values
+function clampValue(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value))
+}
+
+// Handler to clamp input on blur
+function handleClampInput(evt: FocusEvent, field: string, min: number, max: number) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system') return
+  const system = selectedElement.value.data as SystemData
+  const currentValue = system[field as keyof SystemData] as number
+  const clampedValue = clampValue(currentValue, min, max)
+  if (currentValue !== clampedValue) {
+    handleUpdateSystem(field, clampedValue)
+  }
+}
+
+// Dynamic coordinate toggle handlers
+function handleToggleAllDynamic(value: boolean) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system') return
+  const system = selectedElement.value.data as SystemData
+  
+  if (value) {
+    // Enable all dynamic coordinates with ±5 default
+    mapStore.updateSystem(system.id, {
+      isDynamicX: true,
+      xMin: system.x - 5,
+      xMax: system.x + 5,
+      isDynamicY: true,
+      yMin: system.y - 5,
+      yMax: system.y + 5,
+      isDynamicZ: true,
+      zMin: system.z - 5,
+      zMax: system.z + 5
+    })
+  } else {
+    // Disable all dynamic coordinates
+    mapStore.updateSystem(system.id, {
+      isDynamicX: false,
+      isDynamicY: false,
+      isDynamicZ: false
+    })
+  }
+}
+
+function handleToggleDynamicCoord(axis: 'x' | 'y' | 'z', value: boolean) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system') return
+  const system = selectedElement.value.data as SystemData
+  
+  const updates: Partial<Omit<SystemData, 'id'>> = {}
+  const updatesAny = updates as Record<string, unknown>
+  
+  if (value) {
+    // Enable dynamic for this axis with ±5 default
+    updatesAny[`isDynamic${axis.toUpperCase()}`] = true
+    updatesAny[`${axis}Min`] = system[axis] - 5
+    updatesAny[`${axis}Max`] = system[axis] + 5
+  } else {
+    // Disable dynamic for this axis
+    updatesAny[`isDynamic${axis.toUpperCase()}`] = false
+  }
+  
+  mapStore.updateSystem(system.id, updates)
+}
+
+// Spawn weight handlers
+function handleToggleSpawnWeight(value: boolean) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system') return
+  const system = selectedElement.value.data as SystemData
+  
+  if (value) {
+    // Enable spawn weight with base = 0
+    mapStore.updateSpawnWeight(system.id, 0, undefined)
+  } else {
+    // Delete spawn weight
+    mapStore.deleteSpawnWeight(system.id)
+  }
+}
+
+function handleUpdateSpawnWeightBase(base: number) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system') return
+  const system = selectedElement.value.data as SystemData
+  
+  if (system.spawnWeight) {
+    mapStore.updateSpawnWeight(system.id, base, system.spawnWeight.modifier)
+  }
+}
+
+function handleUpdateSpawnWeightModifier(text: string | number | null) {
+  if (!selectedElement.value || selectedElement.value.type !== 'system' || typeof text !== 'string') return
+  const system = selectedElement.value.data as SystemData
+  
+  if (!system.spawnWeight) return
+  
+  try {
+    modifierSyntaxError.value = ''
+    
+    // Parse Clausewitz syntax (simple key = value pairs)
+    const modifier: Record<string, string | number> = {}
+    const lines = text.split('\n').filter(line => line.trim())
+    
+    for (const line of lines) {
+      const match = line.match(/^\s*(\w+)\s*=\s*(.+)\s*$/)
+      if (!match || !match[1] || !match[2]) {
+        modifierSyntaxError.value = t('drawer.modifierInvalidSyntax')
+        return
+      }
+      
+      const key = match[1]
+      const valueStr = match[2].trim()
+      let value: string | number = valueStr
+      
+      // Try to parse as number
+      if (!isNaN(Number(valueStr))) {
+        value = Number(valueStr)
+      }
+      
+      modifier[key] = value
+    }
+    
+    mapStore.updateSpawnWeight(system.id, system.spawnWeight.base, Object.keys(modifier).length > 0 ? modifier : undefined)
+  } catch {
+    modifierSyntaxError.value = t('drawer.modifierInvalidSyntax')
+  }
 }
 </script>

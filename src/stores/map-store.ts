@@ -9,6 +9,21 @@ export interface SystemData {
   y: number;
   z: number;
   initializer?: string;
+  // Dynamic coordinate support
+  isDynamicX?: boolean;
+  isDynamicY?: boolean;
+  isDynamicZ?: boolean;
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+  zMin?: number;
+  zMax?: number;
+  // Spawn weight support
+  spawnWeight?: {
+    base: number;
+    modifier?: Record<string, string | number>;
+  };
 }
 
 export interface HyperlaneData {
@@ -146,6 +161,16 @@ export const useMapStore = defineStore('map', () => {
         let y = 0;
         let z = 0;
         let initializer: string | undefined;
+        let isDynamicX = false;
+        let isDynamicY = false;
+        let isDynamicZ = false;
+        let xMin: number | undefined;
+        let xMax: number | undefined;
+        let yMin: number | undefined;
+        let yMax: number | undefined;
+        let zMin: number | undefined;
+        let zMax: number | undefined;
+        let spawnWeight: { base: number; modifier?: Record<string, string | number> } | undefined;
 
         for (const sysProp of systemBlock.properties) {
           if (sysProp.key === 'id') {
@@ -162,44 +187,92 @@ export const useMapStore = defineStore('map', () => {
                   // Handle both simple values and min/max objects
                   const xBlock = getBlockValue(posProp);
                   if (xBlock) {
-                    // It's a min/max object, use the average
+                    // It's a min/max object
+                    isDynamicX = true;
                     const minProp = findPropertyInBlock(xBlock, 'min');
                     const maxProp = findPropertyInBlock(xBlock, 'max');
-                    const min = minProp ? getValueAsNumber(minProp.value) : 0;
-                    const max = maxProp ? getValueAsNumber(maxProp.value) : 0;
-                    x = (min + max) / 2;
+                    xMin = minProp ? getValueAsNumber(minProp.value) : 0;
+                    xMax = maxProp ? getValueAsNumber(maxProp.value) : 0;
+                    x = (xMin + xMax) / 2;
                   } else {
                     x = getValueAsNumber(posProp.value);
                   }
                 } else if (posProp.key === 'y') {
                   const yBlock = getBlockValue(posProp);
                   if (yBlock) {
+                    isDynamicY = true;
                     const minProp = findPropertyInBlock(yBlock, 'min');
                     const maxProp = findPropertyInBlock(yBlock, 'max');
-                    const min = minProp ? getValueAsNumber(minProp.value) : 0;
-                    const max = maxProp ? getValueAsNumber(maxProp.value) : 0;
-                    y = (min + max) / 2;
+                    yMin = minProp ? getValueAsNumber(minProp.value) : 0;
+                    yMax = maxProp ? getValueAsNumber(maxProp.value) : 0;
+                    y = (yMin + yMax) / 2;
                   } else {
                     y = getValueAsNumber(posProp.value);
                   }
                 } else if (posProp.key === 'z') {
                   const zBlock = getBlockValue(posProp);
                   if (zBlock) {
+                    isDynamicZ = true;
                     const minProp = findPropertyInBlock(zBlock, 'min');
                     const maxProp = findPropertyInBlock(zBlock, 'max');
-                    const min = minProp ? getValueAsNumber(minProp.value) : 0;
-                    const max = maxProp ? getValueAsNumber(maxProp.value) : 0;
-                    z = (min + max) / 2;
+                    zMin = minProp ? getValueAsNumber(minProp.value) : 0;
+                    zMax = maxProp ? getValueAsNumber(maxProp.value) : 0;
+                    z = (zMin + zMax) / 2;
                   } else {
                     z = getValueAsNumber(posProp.value);
                   }
                 }
               }
             }
+          } else if (sysProp.key === 'spawn_weight') {
+            const spawnWeightBlock = getBlockValue(sysProp);
+            if (spawnWeightBlock) {
+              let base = 0;
+              let modifier: Record<string, string | number> | undefined;
+              
+              for (const swProp of spawnWeightBlock.properties) {
+                if (swProp.key === 'base') {
+                  base = getValueAsNumber(swProp.value);
+                } else if (swProp.key === 'modifier') {
+                  const modifierBlock = getBlockValue(swProp);
+                  if (modifierBlock) {
+                    modifier = {};
+                    for (const modProp of modifierBlock.properties) {
+                      const val = modProp.value;
+                      if (typeof val === 'number' || typeof val === 'string') {
+                        modifier[modProp.key] = val;
+                      }
+                    }
+                  }
+                }
+              }
+              
+              spawnWeight = { base, ...(modifier ? { modifier } : {}) };
+            }
           }
         }
 
-        systemList.push({ id, name, x, y, z, ...(initializer ? { initializer } : {}) });
+        const systemData: SystemData = { 
+          id, name, x, y, z
+        };
+        if (initializer) systemData.initializer = initializer;
+        if (isDynamicX && xMin !== undefined && xMax !== undefined) {
+          systemData.isDynamicX = isDynamicX;
+          systemData.xMin = xMin;
+          systemData.xMax = xMax;
+        }
+        if (isDynamicY && yMin !== undefined && yMax !== undefined) {
+          systemData.isDynamicY = isDynamicY;
+          systemData.yMin = yMin;
+          systemData.yMax = yMax;
+        }
+        if (isDynamicZ && zMin !== undefined && zMax !== undefined) {
+          systemData.isDynamicZ = isDynamicZ;
+          systemData.zMin = zMin;
+          systemData.zMax = zMax;
+        }
+        if (spawnWeight) systemData.spawnWeight = spawnWeight;
+        systemList.push(systemData);
       }
     }
 
@@ -374,6 +447,128 @@ export const useMapStore = defineStore('map', () => {
 
     clausewitzDoc.value.set(`static_galaxy_scenario.${parentKey}.${nestedKey}`, value);
     version.value++;
+  }
+
+  function addSystem(x: number, y: number, z: number = 0): { success: boolean; error?: string; id?: string } {
+    const scenario = getScenarioBlock();
+    if (!scenario) {
+      return { success: false, error: 'No map loaded' };
+    }
+
+    // Get next available ID
+    const existingIds = systems.value.map(s => parseInt(s.id)).filter(id => !isNaN(id));
+    const nextId = existingIds.length > 0 ? (Math.max(...existingIds) + 1).toString() : '0';
+
+    // Create position block
+    const positionBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'x', operator: '=', value: x } as Property,
+        { type: 'Property', key: 'y', operator: '=', value: y } as Property,
+        { type: 'Property', key: 'z', operator: '=', value: z } as Property
+      ]
+    };
+
+    // Create system block
+    const systemBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'id', operator: '=', value: nextId } as Property,
+        { type: 'Property', key: 'name', operator: '=', value: '' } as Property,
+        { type: 'Property', key: 'position', operator: '=', value: positionBlock } as Property
+      ]
+    };
+
+    // Add system property to scenario
+    const systemProperty: Property = {
+      type: 'Property',
+      key: 'system',
+      operator: '=',
+      value: systemBlock
+    };
+
+    scenario.properties.push(systemProperty);
+    version.value++;
+
+    return { success: true, id: nextId };
+  }
+
+  function addNebula(x: number, y: number, z: number = 0, radius: number = 5): { success: boolean; error?: string } {
+    const scenario = getScenarioBlock();
+    if (!scenario) {
+      return { success: false, error: 'No map loaded' };
+    }
+
+    // Create position block
+    const positionBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'x', operator: '=', value: x } as Property,
+        { type: 'Property', key: 'y', operator: '=', value: y } as Property,
+        { type: 'Property', key: 'z', operator: '=', value: z } as Property
+      ]
+    };
+
+    // Create nebula block with empty name
+    const nebulaBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'name', operator: '=', value: '' } as Property,
+        { type: 'Property', key: 'position', operator: '=', value: positionBlock } as Property,
+        { type: 'Property', key: 'radius', operator: '=', value: radius } as Property
+      ]
+    };
+
+    // Add nebula property to scenario
+    const nebulaProperty: Property = {
+      type: 'Property',
+      key: 'nebula',
+      operator: '=',
+      value: nebulaBlock
+    };
+
+    scenario.properties.push(nebulaProperty);
+    version.value++;
+
+    return { success: true };
+  }
+
+  function addHyperlane(fromId: string, toId: string, type: 'add' | 'prevent'): { success: boolean; error?: string } {
+    const scenario = getScenarioBlock();
+    if (!scenario) {
+      return { success: false, error: 'No map loaded' };
+    }
+
+    // Check if hyperlane already exists
+    const existingHyperlane = hyperlanes.value.find(
+      h => (h.from === fromId && h.to === toId) || (h.from === toId && h.to === fromId)
+    );
+
+    if (existingHyperlane) {
+      return { success: false, error: 'Hyperlane already exists between these systems' };
+    }
+
+    // Create hyperlane block
+    const hyperlaneBlock: Block = {
+      type: 'Block',
+      properties: [
+        { type: 'Property', key: 'from', operator: '=', value: fromId } as Property,
+        { type: 'Property', key: 'to', operator: '=', value: toId } as Property
+      ]
+    };
+
+    // Add hyperlane property to scenario
+    const hyperlaneProperty: Property = {
+      type: 'Property',
+      key: type === 'add' ? 'add_hyperlane' : 'prevent_hyperlane',
+      operator: '=',
+      value: hyperlaneBlock
+    };
+
+    scenario.properties.push(hyperlaneProperty);
+    version.value++;
+
+    return { success: true };
   }
 
   function deleteSystem(systemId: string): void {
@@ -570,21 +765,161 @@ export const useMapStore = defineStore('map', () => {
           }
         }
 
-        // Update position
-        if (updates.x !== undefined || updates.y !== undefined || updates.z !== undefined) {
+        // Update position (including dynamic coordinates)
+        if (updates.x !== undefined || updates.y !== undefined || updates.z !== undefined ||
+            updates.isDynamicX !== undefined || updates.isDynamicY !== undefined || updates.isDynamicZ !== undefined ||
+            updates.xMin !== undefined || updates.xMax !== undefined ||
+            updates.yMin !== undefined || updates.yMax !== undefined ||
+            updates.zMin !== undefined || updates.zMax !== undefined) {
           const posProp = findPropertyInBlock(systemBlock, 'position');
           if (posProp) {
             const posBlock = getBlockValue(posProp);
             if (posBlock) {
-              if (updates.x !== undefined) {
+              // Handle X coordinate
+              if (updates.isDynamicX !== undefined) {
+                const xProp = findPropertyInBlock(posBlock, 'x');
+                if (updates.isDynamicX) {
+                  // Convert to dynamic (min/max block)
+                  const xMin = updates.xMin ?? (xProp ? getValueAsNumber(xProp.value) - 5 : 0);
+                  const xMax = updates.xMax ?? (xProp ? getValueAsNumber(xProp.value) + 5 : 0);
+                  
+                  if (xProp) {
+                    xProp.value = {
+                      type: 'Block',
+                      properties: [
+                        { type: 'Property', key: 'min', operator: '=', value: xMin } as Property,
+                        { type: 'Property', key: 'max', operator: '=', value: xMax } as Property
+                      ]
+                    } as Block;
+                  }
+                } else {
+                  // Convert to static (simple value)
+                  if (xProp) {
+                    const xBlock = getBlockValue(xProp);
+                    if (xBlock) {
+                      const minProp = findPropertyInBlock(xBlock, 'min');
+                      const maxProp = findPropertyInBlock(xBlock, 'max');
+                      const min = minProp ? getValueAsNumber(minProp.value) : 0;
+                      const max = maxProp ? getValueAsNumber(maxProp.value) : 0;
+                      xProp.value = (min + max) / 2;
+                    }
+                  }
+                }
+              } else if (updates.x !== undefined) {
                 const xProp = findPropertyInBlock(posBlock, 'x');
                 if (xProp) xProp.value = updates.x;
+              } else if (updates.xMin !== undefined || updates.xMax !== undefined) {
+                const xProp = findPropertyInBlock(posBlock, 'x');
+                if (xProp) {
+                  const xBlock = getBlockValue(xProp);
+                  if (xBlock) {
+                    if (updates.xMin !== undefined) {
+                      const minProp = findPropertyInBlock(xBlock, 'min');
+                      if (minProp) minProp.value = updates.xMin;
+                    }
+                    if (updates.xMax !== undefined) {
+                      const maxProp = findPropertyInBlock(xBlock, 'max');
+                      if (maxProp) maxProp.value = updates.xMax;
+                    }
+                  }
+                }
               }
-              if (updates.y !== undefined) {
+              
+              // Handle Y coordinate
+              if (updates.isDynamicY !== undefined) {
+                const yProp = findPropertyInBlock(posBlock, 'y');
+                if (updates.isDynamicY) {
+                  // Convert to dynamic (min/max block)
+                  const yMin = updates.yMin ?? (yProp ? getValueAsNumber(yProp.value) - 5 : 0);
+                  const yMax = updates.yMax ?? (yProp ? getValueAsNumber(yProp.value) + 5 : 0);
+                  
+                  if (yProp) {
+                    yProp.value = {
+                      type: 'Block',
+                      properties: [
+                        { type: 'Property', key: 'min', operator: '=', value: yMin } as Property,
+                        { type: 'Property', key: 'max', operator: '=', value: yMax } as Property
+                      ]
+                    } as Block;
+                  }
+                } else {
+                  // Convert to static (simple value)
+                  if (yProp) {
+                    const yBlock = getBlockValue(yProp);
+                    if (yBlock) {
+                      const minProp = findPropertyInBlock(yBlock, 'min');
+                      const maxProp = findPropertyInBlock(yBlock, 'max');
+                      const min = minProp ? getValueAsNumber(minProp.value) : 0;
+                      const max = maxProp ? getValueAsNumber(maxProp.value) : 0;
+                      yProp.value = (min + max) / 2;
+                    }
+                  }
+                }
+              } else if (updates.y !== undefined) {
                 const yProp = findPropertyInBlock(posBlock, 'y');
                 if (yProp) yProp.value = updates.y;
+              } else if (updates.yMin !== undefined || updates.yMax !== undefined) {
+                const yProp = findPropertyInBlock(posBlock, 'y');
+                if (yProp) {
+                  const yBlock = getBlockValue(yProp);
+                  if (yBlock) {
+                    if (updates.yMin !== undefined) {
+                      const minProp = findPropertyInBlock(yBlock, 'min');
+                      if (minProp) minProp.value = updates.yMin;
+                    }
+                    if (updates.yMax !== undefined) {
+                      const maxProp = findPropertyInBlock(yBlock, 'max');
+                      if (maxProp) maxProp.value = updates.yMax;
+                    }
+                  }
+                }
               }
-              if (updates.z !== undefined) {
+              
+              // Handle Z coordinate
+              if (updates.isDynamicZ !== undefined) {
+                const zProp = findPropertyInBlock(posBlock, 'z');
+                if (updates.isDynamicZ) {
+                  // Convert to dynamic (min/max block)
+                  const zMin = updates.zMin ?? (zProp ? getValueAsNumber(zProp.value) - 5 : 0);
+                  const zMax = updates.zMax ?? (zProp ? getValueAsNumber(zProp.value) + 5 : 0);
+                  
+                  if (zProp) {
+                    zProp.value = {
+                      type: 'Block',
+                      properties: [
+                        { type: 'Property', key: 'min', operator: '=', value: zMin } as Property,
+                        { type: 'Property', key: 'max', operator: '=', value: zMax } as Property
+                      ]
+                    } as Block;
+                  } else {
+                    // Create z property if it doesn't exist
+                    posBlock.properties.push({
+                      type: 'Property',
+                      key: 'z',
+                      operator: '=',
+                      value: {
+                        type: 'Block',
+                        properties: [
+                          { type: 'Property', key: 'min', operator: '=', value: zMin } as Property,
+                          { type: 'Property', key: 'max', operator: '=', value: zMax } as Property
+                        ]
+                      } as Block
+                    } as Property);
+                  }
+                } else {
+                  // Convert to static (simple value)
+                  if (zProp) {
+                    const zBlock = getBlockValue(zProp);
+                    if (zBlock) {
+                      const minProp = findPropertyInBlock(zBlock, 'min');
+                      const maxProp = findPropertyInBlock(zBlock, 'max');
+                      const min = minProp ? getValueAsNumber(minProp.value) : 0;
+                      const max = maxProp ? getValueAsNumber(maxProp.value) : 0;
+                      zProp.value = (min + max) / 2;
+                    }
+                  }
+                }
+              } else if (updates.z !== undefined) {
                 const zProp = findPropertyInBlock(posBlock, 'z');
                 if (zProp) {
                   zProp.value = updates.z;
@@ -596,6 +931,21 @@ export const useMapStore = defineStore('map', () => {
                     operator: '=',
                     value: updates.z
                   } as Property);
+                }
+              } else if (updates.zMin !== undefined || updates.zMax !== undefined) {
+                const zProp = findPropertyInBlock(posBlock, 'z');
+                if (zProp) {
+                  const zBlock = getBlockValue(zProp);
+                  if (zBlock) {
+                    if (updates.zMin !== undefined) {
+                      const minProp = findPropertyInBlock(zBlock, 'min');
+                      if (minProp) minProp.value = updates.zMin;
+                    }
+                    if (updates.zMax !== undefined) {
+                      const maxProp = findPropertyInBlock(zBlock, 'max');
+                      if (maxProp) maxProp.value = updates.zMax;
+                    }
+                  }
                 }
               }
             }
@@ -674,196 +1024,150 @@ export const useMapStore = defineStore('map', () => {
     selectedElement.value = null;
   }
 
-  // === Creation helpers ===
-  
-  /**
-   * Get the next available system ID, filling holes in the sequence.
-   * For example, if systems have IDs [0, 1, 2, 4, 5], returns "3".
-   */
-  function getNextAvailableId(): string {
-    const existingIds = systems.value
-      .map(s => parseInt(s.id, 10))
-      .filter(id => !isNaN(id))
-      .sort((a, b) => a - b);
-    
-    // Find first gap starting from 0
-    let nextId = 0;
-    for (const id of existingIds) {
-      if (id === nextId) {
-        nextId++;
-      } else if (id > nextId) {
-        // Found a gap
-        break;
+  function updateSpawnWeight(systemId: string, base: number, modifier?: Record<string, string | number>): void {
+    const scenario = getScenarioBlock();
+    if (!scenario) return;
+
+    for (const prop of scenario.properties) {
+      if (prop.key === 'system') {
+        const systemBlock = getBlockValue(prop);
+        if (!systemBlock) continue;
+
+        const idProp = findPropertyInBlock(systemBlock, 'id');
+        if (!idProp || getValueAsString(idProp.value) !== systemId) continue;
+
+        // Find or create spawn_weight property
+        let spawnWeightProp = findPropertyInBlock(systemBlock, 'spawn_weight');
+        
+        if (!spawnWeightProp) {
+          // Create new spawn_weight block
+          const spawnWeightBlock: Block = {
+            type: 'Block',
+            properties: []
+          };
+          
+          spawnWeightProp = {
+            type: 'Property',
+            key: 'spawn_weight',
+            operator: '=',
+            value: spawnWeightBlock
+          } as Property;
+          
+          systemBlock.properties.push(spawnWeightProp);
+        }
+
+        const spawnWeightBlock = getBlockValue(spawnWeightProp);
+        if (!spawnWeightBlock) return;
+
+        // Update base value
+        const baseProp = findPropertyInBlock(spawnWeightBlock, 'base');
+        if (baseProp) {
+          baseProp.value = base;
+        } else {
+          spawnWeightBlock.properties.push({
+            type: 'Property',
+            key: 'base',
+            operator: '=',
+            value: base
+          } as Property);
+        }
+
+        // Update modifier
+        if (modifier && Object.keys(modifier).length > 0) {
+          let modifierProp = findPropertyInBlock(spawnWeightBlock, 'modifier');
+          
+          if (!modifierProp) {
+            const modifierBlock: Block = {
+              type: 'Block',
+              properties: []
+            };
+            
+            modifierProp = {
+              type: 'Property',
+              key: 'modifier',
+              operator: '=',
+              value: modifierBlock
+            } as Property;
+            
+            spawnWeightBlock.properties.push(modifierProp);
+          }
+
+          const modifierBlock = getBlockValue(modifierProp);
+          if (modifierBlock) {
+            // Clear existing properties and add new ones
+            modifierBlock.properties = [];
+            for (const [key, value] of Object.entries(modifier)) {
+              modifierBlock.properties.push({
+                type: 'Property',
+                key,
+                operator: '=',
+                value
+              } as Property);
+            }
+          }
+        } else {
+          // Remove modifier if it exists and no modifier provided
+          const modifierIndex = spawnWeightBlock.properties.findIndex((p: Property) => p.key === 'modifier');
+          if (modifierIndex !== -1) {
+            spawnWeightBlock.properties.splice(modifierIndex, 1);
+          }
+        }
+
+        // Update selection if this system is selected
+        if (selectedElement.value?.type === 'system') {
+          const selectedSystem = selectedElement.value.data as SystemData;
+          if (selectedSystem.id === systemId) {
+            selectedElement.value = {
+              type: 'system',
+              data: {
+                ...selectedSystem,
+                spawnWeight: { base, ...(modifier ? { modifier } : {}) }
+              }
+            };
+          }
+        }
+
+        version.value++;
+        return;
       }
     }
-    
-    return String(nextId);
   }
 
-  /**
-   * Check if a system exists at the exact coordinates.
-   */
-  function hasSystemAtPosition(x: number, y: number, z: number): boolean {
-    return systems.value.some(s => s.x === x && s.y === y && s.z === z);
-  }
-
-  /**
-   * Check if a nebula exists at the exact coordinates.
-   */
-  function hasNebulaAtPosition(x: number, y: number, z: number): boolean {
-    return nebulae.value.some(n => n.x === x && n.y === y && n.z === z);
-  }
-
-  /**
-   * Check if a hyperlane already exists between two systems (in either direction).
-   */
-  function hasHyperlane(fromId: string, toId: string, type: 'add' | 'prevent'): boolean {
-    return hyperlanes.value.some(h => 
-      h.type === type && (
-        (h.from === fromId && h.to === toId) ||
-        (h.from === toId && h.to === fromId)
-      )
-    );
-  }
-
-  /**
-   * Add a new system at the given coordinates.
-   * Returns success status and error message if applicable.
-   */
-  function addSystem(x: number, y: number, z: number = 0): { success: boolean; error?: string; id?: string } {
+  function deleteSpawnWeight(systemId: string): void {
     const scenario = getScenarioBlock();
-    if (!scenario) {
-      return { success: false, error: 'No map loaded' };
+    if (!scenario) return;
+
+    for (const prop of scenario.properties) {
+      if (prop.key === 'system') {
+        const systemBlock = getBlockValue(prop);
+        if (!systemBlock) continue;
+
+        const idProp = findPropertyInBlock(systemBlock, 'id');
+        if (!idProp || getValueAsString(idProp.value) !== systemId) continue;
+
+        // Remove spawn_weight property
+        const spawnWeightIndex = systemBlock.properties.findIndex((p: Property) => p.key === 'spawn_weight');
+        if (spawnWeightIndex !== -1) {
+          systemBlock.properties.splice(spawnWeightIndex, 1);
+        }
+
+        // Update selection if this system is selected
+        if (selectedElement.value?.type === 'system') {
+          const selectedSystem = selectedElement.value.data as SystemData;
+          if (selectedSystem.id === systemId) {
+            // Remove spawn_weight from the system data
+            delete selectedSystem.spawnWeight;
+            selectedElement.value = {
+              type: 'system',
+              data: { ...selectedSystem }
+            };
+          }
+        }
+
+        version.value++;
+        return;
+      }
     }
-
-    // Check for duplicate position
-    if (hasSystemAtPosition(x, y, z)) {
-      return { success: false, error: `A system already exists at coordinates (${x}, ${y}, ${z})` };
-    }
-
-    const id = getNextAvailableId();
-    
-    // Create position block
-    const positionBlock: Block = {
-      type: 'Block',
-      properties: [
-        { type: 'Property', key: 'x', operator: '=', value: x } as Property,
-        { type: 'Property', key: 'y', operator: '=', value: y } as Property,
-        { type: 'Property', key: 'z', operator: '=', value: z } as Property
-      ]
-    };
-
-    // Create system block
-    const systemBlock: Block = {
-      type: 'Block',
-      properties: [
-        { type: 'Property', key: 'id', operator: '=', value: id } as Property,
-        { type: 'Property', key: 'name', operator: '=', value: '' } as Property,
-        { type: 'Property', key: 'position', operator: '=', value: positionBlock } as Property
-      ]
-    };
-
-    // Add system property to scenario
-    const systemProperty: Property = {
-      type: 'Property',
-      key: 'system',
-      operator: '=',
-      value: systemBlock
-    };
-
-    scenario.properties.push(systemProperty);
-    version.value++;
-
-    return { success: true, id };
-  }
-
-  /**
-   * Add a new nebula at the given coordinates with default radius.
-   * Returns success status and error message if applicable.
-   */
-  function addNebula(x: number, y: number, z: number = 0, radius: number = 5): { success: boolean; error?: string } {
-    const scenario = getScenarioBlock();
-    if (!scenario) {
-      return { success: false, error: 'No map loaded' };
-    }
-
-    // Check for duplicate position
-    if (hasNebulaAtPosition(x, y, z)) {
-      return { success: false, error: `A nebula already exists at coordinates (${x}, ${y}, ${z})` };
-    }
-
-    // Create position block
-    const positionBlock: Block = {
-      type: 'Block',
-      properties: [
-        { type: 'Property', key: 'x', operator: '=', value: x } as Property,
-        { type: 'Property', key: 'y', operator: '=', value: y } as Property,
-        { type: 'Property', key: 'z', operator: '=', value: z } as Property
-      ]
-    };
-
-    // Create nebula block with empty name (user can edit later)
-    const nebulaBlock: Block = {
-      type: 'Block',
-      properties: [
-        { type: 'Property', key: 'name', operator: '=', value: '' } as Property,
-        { type: 'Property', key: 'position', operator: '=', value: positionBlock } as Property,
-        { type: 'Property', key: 'radius', operator: '=', value: radius } as Property
-      ]
-    };
-
-    // Add nebula property to scenario
-    const nebulaProperty: Property = {
-      type: 'Property',
-      key: 'nebula',
-      operator: '=',
-      value: nebulaBlock
-    };
-
-    scenario.properties.push(nebulaProperty);
-    version.value++;
-
-    return { success: true };
-  }
-
-  /**
-   * Add a new hyperlane between two systems.
-   * Returns success status and error message if applicable.
-   */
-  function addHyperlane(fromId: string, toId: string, type: 'add' | 'prevent'): { success: boolean; error?: string } {
-    const scenario = getScenarioBlock();
-    if (!scenario) {
-      return { success: false, error: 'No map loaded' };
-    }
-
-    // Check for duplicate hyperlane
-    if (hasHyperlane(fromId, toId, type)) {
-      const typeLabel = type === 'add' ? 'hyperlane' : 'prevent hyperlane';
-      return { success: false, error: `A ${typeLabel} already exists between systems ${fromId} and ${toId}` };
-    }
-
-    // Create hyperlane block
-    const hyperlaneBlock: Block = {
-      type: 'Block',
-      properties: [
-        { type: 'Property', key: 'from', operator: '=', value: fromId } as Property,
-        { type: 'Property', key: 'to', operator: '=', value: toId } as Property
-      ]
-    };
-
-    // Add hyperlane property to scenario
-    const hyperlaneKey = type === 'add' ? 'add_hyperlane' : 'prevent_hyperlane';
-    const hyperlaneProperty: Property = {
-      type: 'Property',
-      key: hyperlaneKey,
-      operator: '=',
-      value: hyperlaneBlock
-    };
-
-    scenario.properties.push(hyperlaneProperty);
-    version.value++;
-
-    return { success: true };
   }
 
   return {
@@ -882,22 +1186,19 @@ export const useMapStore = defineStore('map', () => {
     createNewMap,
     updateSetting,
     updateNestedSetting,
+    addSystem,
+    addNebula,
+    addHyperlane,
     deleteSystem,
     deleteHyperlane,
     deleteNebula,
     updateSystem,
     updateNebula,
     toggleHyperlaneType,
+    updateSpawnWeight,
+    deleteSpawnWeight,
     stringifyDocument,
     hasDocument,
-    // Creation actions
-    getNextAvailableId,
-    hasSystemAtPosition,
-    hasNebulaAtPosition,
-    hasHyperlane,
-    addSystem,
-    addNebula,
-    addHyperlane,
     // Selection
     selectedElement,
     selectElement,

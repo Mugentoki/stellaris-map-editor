@@ -47,6 +47,19 @@ interface NebulaMeshData {
 }
 const nebulaMeshes: Map<string, NebulaMeshData> = new Map();
 
+// Dynamic range meshes for systems with dynamic coordinates
+interface DynamicRangeMeshData {
+  rangeMesh: THREE.Mesh;
+  wireframe: THREE.LineSegments;
+  glowSprite: THREE.Sprite;
+  targetScale: THREE.Vector3;
+  targetPosition: THREE.Vector3;
+  currentScale: THREE.Vector3;
+  currentPosition: THREE.Vector3;
+  transitionProgress: number;
+}
+const dynamicRangeMeshes: Map<string, DynamicRangeMeshData> = new Map();
+
 // Raycasting
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -526,6 +539,45 @@ function animate() {
     selectionRing.scale.setScalar(pulse);
   }
   
+  // Animate dynamic range mesh transitions
+  const deltaTime = clock.getDelta();
+  for (const meshData of dynamicRangeMeshes.values()) {
+    if (meshData.transitionProgress < 1) {
+      // Advance transition progress (300ms duration)
+      meshData.transitionProgress = Math.min(1, meshData.transitionProgress + deltaTime / 0.3);
+      
+      // Ease-in-out function
+      const t = meshData.transitionProgress;
+      const easedT = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
+      
+      // Interpolate position
+      meshData.rangeMesh.position.lerpVectors(
+        meshData.currentPosition,
+        meshData.targetPosition,
+        easedT
+      );
+      meshData.wireframe.position.copy(meshData.rangeMesh.position);
+      meshData.glowSprite.position.copy(meshData.rangeMesh.position);
+      
+      // Interpolate scale
+      meshData.rangeMesh.scale.lerpVectors(
+        meshData.currentScale,
+        meshData.targetScale,
+        easedT
+      );
+      meshData.wireframe.scale.copy(meshData.rangeMesh.scale);
+      
+      // Update glow sprite scale (independent of box scale)
+      const maxRange = Math.max(
+        meshData.targetScale.x,
+        meshData.targetScale.y,
+        meshData.targetScale.z
+      );
+      const glowScale = maxRange * 1.5;
+      meshData.glowSprite.scale.set(glowScale, glowScale, glowScale);
+    }
+  }
+  
   // Smooth camera animation to target pivot
   if (targetPivot) {
     const currentPivot = focusPoint || cameraPivot;
@@ -623,6 +675,9 @@ function renderMap() {
     
     // Store reference to glow sprite on mesh for cleanup
     mesh.userData.glowSprite = glowSprite;
+    
+    // Create dynamic range visualization if system has dynamic coordinates
+    createDynamicRangeVisualization(system);
   }
 
   // Create hyperlanes
@@ -802,6 +857,159 @@ function hashString(str: string): number {
   return Math.abs(hash);
 }
 
+function createDynamicRangeVisualization(system: SystemData) {
+  // Count how many axes are dynamic
+  const dynamicCount = (system.isDynamicX ? 1 : 0) + (system.isDynamicY ? 1 : 0) + (system.isDynamicZ ? 1 : 0);
+  
+  // Remove existing visualization if present
+  const existing = dynamicRangeMeshes.get(system.id);
+  if (existing) {
+    scene.remove(existing.rangeMesh);
+    scene.remove(existing.wireframe);
+    scene.remove(existing.glowSprite);
+    existing.rangeMesh.geometry.dispose();
+    if (Array.isArray(existing.rangeMesh.material)) {
+      existing.rangeMesh.material.forEach(m => m.dispose());
+    } else {
+      existing.rangeMesh.material.dispose();
+    }
+    existing.wireframe.geometry.dispose();
+    if (Array.isArray(existing.wireframe.material)) {
+      existing.wireframe.material.forEach(m => m.dispose());
+    } else {
+      existing.wireframe.material.dispose();
+    }
+    existing.glowSprite.material.dispose();
+    dynamicRangeMeshes.delete(system.id);
+  }
+  
+  // Only create if at least one axis is dynamic
+  if (dynamicCount === 0) return;
+  
+  // Calculate ranges and center position
+  const xMin = system.xMin ?? system.x;
+  const xMax = system.xMax ?? system.x;
+  const yMin = system.yMin ?? system.y;
+  const yMax = system.yMax ?? system.y;
+  const zMin = system.zMin ?? system.z;
+  const zMax = system.zMax ?? system.z;
+  
+  const centerX = (xMin + xMax) / 2;
+  const centerY = (yMin + yMax) / 2;
+  const centerZ = (zMin + zMax) / 2;
+  
+  const rangeX = xMax - xMin;
+  const rangeY = yMax - yMin;
+  const rangeZ = zMax - zMin;
+  
+  // Create geometry based on number of dynamic axes
+  let geometry: THREE.BufferGeometry;
+  
+  if (dynamicCount === 1) {
+    // 1D line: use cylinder along the dynamic axis
+    const length = system.isDynamicX ? rangeX : (system.isDynamicY ? rangeY : rangeZ);
+    geometry = new THREE.CylinderGeometry(0.2, 0.2, length, 8);
+    
+    // Rotate to align with the correct axis
+    if (system.isDynamicX) {
+      geometry.rotateZ(Math.PI / 2);
+    } else if (system.isDynamicZ) {
+      geometry.rotateX(Math.PI / 2);
+    }
+    // Y axis is already aligned correctly
+  } else if (dynamicCount === 2) {
+    // 2D plane: use thin box
+    const thickness = 0.2;
+    if (!system.isDynamicX) {
+      // YZ plane
+      geometry = new THREE.BoxGeometry(thickness, rangeY, rangeZ);
+    } else if (!system.isDynamicY) {
+      // XZ plane
+      geometry = new THREE.BoxGeometry(rangeX, thickness, rangeZ);
+    } else {
+      // XY plane
+      geometry = new THREE.BoxGeometry(rangeX, rangeY, thickness);
+    }
+  } else {
+    // 3D box
+    geometry = new THREE.BoxGeometry(rangeX, rangeY, rangeZ);
+  }
+  
+  // Create mesh with cyan semi-transparent material
+  const material = new THREE.MeshBasicMaterial({
+    color: 0x00ddff,
+    transparent: true,
+    opacity: 0.3,
+    depthWrite: false
+  });
+  
+  const rangeMesh = new THREE.Mesh(geometry, material);
+  rangeMesh.position.set(centerX, centerY, centerZ);
+  
+  // Override raycast to make it non-interactive (clicks pass through)
+  rangeMesh.raycast = () => {};
+  
+  scene.add(rangeMesh);
+  
+  // Create wireframe edges
+  const edges = new THREE.EdgesGeometry(geometry);
+  const wireframeMaterial = new THREE.LineBasicMaterial({
+    color: 0x00ddff,
+    transparent: true,
+    opacity: 0.6
+  });
+  const wireframe = new THREE.LineSegments(edges, wireframeMaterial);
+  wireframe.position.copy(rangeMesh.position);
+  wireframe.raycast = () => {}; // Also non-interactive
+  scene.add(wireframe);
+  
+  // Create glow sprite (nebula-style glow)
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  if (context) {
+    const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128);
+    gradient.addColorStop(0, 'rgba(0, 221, 255, 0.8)');
+    gradient.addColorStop(0.3, 'rgba(0, 221, 255, 0.4)');
+    gradient.addColorStop(0.6, 'rgba(0, 221, 255, 0.1)');
+    gradient.addColorStop(1, 'rgba(0, 221, 255, 0)');
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 256, 256);
+  }
+  const glowTexture = new THREE.CanvasTexture(canvas);
+  
+  const glowMaterial = new THREE.SpriteMaterial({
+    map: glowTexture,
+    color: 0x00ddff,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false
+  });
+  
+  const glowSprite = new THREE.Sprite(glowMaterial);
+  const glowSize = Math.max(rangeX, rangeY, rangeZ) * 1.5;
+  glowSprite.scale.set(glowSize, glowSize, 1);
+  glowSprite.position.copy(rangeMesh.position);
+  glowSprite.raycast = () => {}; // Non-interactive
+  scene.add(glowSprite);
+  
+  // Store mesh data with transition properties
+  const targetPosition = new THREE.Vector3(centerX, centerY, centerZ);
+  const targetScale = new THREE.Vector3(1, 1, 1);
+  
+  dynamicRangeMeshes.set(system.id, {
+    rangeMesh,
+    wireframe,
+    glowSprite,
+    targetPosition,
+    targetScale,
+    currentPosition: targetPosition.clone(),
+    currentScale: targetScale.clone(),
+    transitionProgress: 1 // Start fully visible
+  });
+}
+
 function clearMapObjects() {
   // Clear hover state
   clearHover();
@@ -826,6 +1034,30 @@ function clearMapObjects() {
     scene.remove(mesh);
   }
   systemMeshes.clear();
+  
+  // Dispose and remove all dynamic range meshes
+  for (const meshData of dynamicRangeMeshes.values()) {
+    scene.remove(meshData.rangeMesh);
+    scene.remove(meshData.wireframe);
+    scene.remove(meshData.glowSprite);
+    
+    meshData.rangeMesh.geometry.dispose();
+    if (Array.isArray(meshData.rangeMesh.material)) {
+      meshData.rangeMesh.material.forEach(m => m.dispose());
+    } else {
+      meshData.rangeMesh.material.dispose();
+    }
+    
+    meshData.wireframe.geometry.dispose();
+    if (Array.isArray(meshData.wireframe.material)) {
+      meshData.wireframe.material.forEach(m => m.dispose());
+    } else {
+      meshData.wireframe.material.dispose();
+    }
+    
+    meshData.glowSprite.material.dispose();
+  }
+  dynamicRangeMeshes.clear();
 
   // Dispose and remove all hyperlane lines
   for (const line of hyperlaneMeshes.values()) {
