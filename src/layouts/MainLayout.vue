@@ -471,7 +471,7 @@ const xMinMaxError = computed(() => {
   if (selectedElement.value?.type === 'system') {
     const system = selectedElement.value.data as SystemData
     if (system.isDynamicX && system.xMin !== undefined && system.xMax !== undefined) {
-      return system.xMin >= system.xMax ? t('drawer.minMaxError') : ''
+      return system.xMin > system.xMax ? t('drawer.minMaxError') : ''
     }
   }
   return ''
@@ -481,7 +481,7 @@ const yMinMaxError = computed(() => {
   if (selectedElement.value?.type === 'system') {
     const system = selectedElement.value.data as SystemData
     if (system.isDynamicY && system.yMin !== undefined && system.yMax !== undefined) {
-      return system.yMin >= system.yMax ? t('drawer.minMaxError') : ''
+      return system.yMin > system.yMax ? t('drawer.minMaxError') : ''
     }
   }
   return ''
@@ -491,7 +491,7 @@ const zMinMaxError = computed(() => {
   if (selectedElement.value?.type === 'system') {
     const system = selectedElement.value.data as SystemData
     if (system.isDynamicZ && system.zMin !== undefined && system.zMax !== undefined) {
-      return system.zMin >= system.zMax ? t('drawer.minMaxError') : ''
+      return system.zMin > system.zMax ? t('drawer.minMaxError') : ''
     }
   }
   return ''

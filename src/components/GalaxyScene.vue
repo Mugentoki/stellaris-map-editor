@@ -557,7 +557,7 @@ function animate() {
         easedT
       );
       meshData.wireframe.position.copy(meshData.rangeMesh.position);
-      meshData.glowSprite.position.copy(meshData.rangeMesh.position);
+      // glowSprite is not in scene, no need to update position
       
       // Interpolate scale
       meshData.rangeMesh.scale.lerpVectors(
@@ -567,14 +567,7 @@ function animate() {
       );
       meshData.wireframe.scale.copy(meshData.rangeMesh.scale);
       
-      // Update glow sprite scale (independent of box scale)
-      const maxRange = Math.max(
-        meshData.targetScale.x,
-        meshData.targetScale.y,
-        meshData.targetScale.z
-      );
-      const glowScale = maxRange * 1.5;
-      meshData.glowSprite.scale.set(glowScale, glowScale, glowScale);
+      // No glow sprite scale update needed
     }
   }
   
@@ -866,7 +859,7 @@ function createDynamicRangeVisualization(system: SystemData) {
   if (existing) {
     scene.remove(existing.rangeMesh);
     scene.remove(existing.wireframe);
-    scene.remove(existing.glowSprite);
+    // glowSprite not in scene, no need to remove
     existing.rangeMesh.geometry.dispose();
     if (Array.isArray(existing.rangeMesh.material)) {
       existing.rangeMesh.material.forEach(m => m.dispose());
@@ -879,7 +872,7 @@ function createDynamicRangeVisualization(system: SystemData) {
     } else {
       existing.wireframe.material.dispose();
     }
-    existing.glowSprite.material.dispose();
+    // glowSprite material disposal not needed (dummy sprite)
     dynamicRangeMeshes.delete(system.id);
   }
   
@@ -939,7 +932,7 @@ function createDynamicRangeVisualization(system: SystemData) {
   const material = new THREE.MeshBasicMaterial({
     color: 0x00ddff,
     transparent: true,
-    opacity: 0.3,
+    opacity: 0.5,
     depthWrite: false
   });
   
@@ -963,45 +956,17 @@ function createDynamicRangeVisualization(system: SystemData) {
   wireframe.raycast = () => {}; // Also non-interactive
   scene.add(wireframe);
   
-  // Create glow sprite (nebula-style glow)
-  const canvas = document.createElement('canvas');
-  canvas.width = 256;
-  canvas.height = 256;
-  const context = canvas.getContext('2d');
-  if (context) {
-    const gradient = context.createRadialGradient(128, 128, 0, 128, 128, 128);
-    gradient.addColorStop(0, 'rgba(0, 221, 255, 0.8)');
-    gradient.addColorStop(0.3, 'rgba(0, 221, 255, 0.4)');
-    gradient.addColorStop(0.6, 'rgba(0, 221, 255, 0.1)');
-    gradient.addColorStop(1, 'rgba(0, 221, 255, 0)');
-    context.fillStyle = gradient;
-    context.fillRect(0, 0, 256, 256);
-  }
-  const glowTexture = new THREE.CanvasTexture(canvas);
-  
-  const glowMaterial = new THREE.SpriteMaterial({
-    map: glowTexture,
-    color: 0x00ddff,
-    transparent: true,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false
-  });
-  
-  const glowSprite = new THREE.Sprite(glowMaterial);
-  const glowSize = Math.max(rangeX, rangeY, rangeZ) * 1.5;
-  glowSprite.scale.set(glowSize, glowSize, 1);
-  glowSprite.position.copy(rangeMesh.position);
-  glowSprite.raycast = () => {}; // Non-interactive
-  scene.add(glowSprite);
-  
   // Store mesh data with transition properties
   const targetPosition = new THREE.Vector3(centerX, centerY, centerZ);
   const targetScale = new THREE.Vector3(1, 1, 1);
   
+  // Create a dummy glow sprite for compatibility (not added to scene)
+  const dummyGlowSprite = new THREE.Sprite();
+  
   dynamicRangeMeshes.set(system.id, {
     rangeMesh,
     wireframe,
-    glowSprite,
+    glowSprite: dummyGlowSprite,
     targetPosition,
     targetScale,
     currentPosition: targetPosition.clone(),
@@ -1039,7 +1004,7 @@ function clearMapObjects() {
   for (const meshData of dynamicRangeMeshes.values()) {
     scene.remove(meshData.rangeMesh);
     scene.remove(meshData.wireframe);
-    scene.remove(meshData.glowSprite);
+    // glowSprite is not added to scene, no need to remove
     
     meshData.rangeMesh.geometry.dispose();
     if (Array.isArray(meshData.rangeMesh.material)) {
@@ -1055,7 +1020,7 @@ function clearMapObjects() {
       meshData.wireframe.material.dispose();
     }
     
-    meshData.glowSprite.material.dispose();
+    // glowSprite material disposal not needed (dummy sprite)
   }
   dynamicRangeMeshes.clear();
 
